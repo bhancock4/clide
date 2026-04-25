@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CLIDE</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="app">
+      <!-- Welcome screen (shown when no terminals are open) -->
+      <div id="welcome-screen" class="welcome-screen">
+        <pre id="ascii-logo" class="ascii-logo"></pre>
+        <div class="welcome-subtitle">Command Line Integrated Development Environment</div>
+        <div id="clyde-mascot" class="clyde-mascot"></div>
+        <div class="quick-launch">
+          <div class="quick-launch-title">Quick Launch</div>
+          <div id="tool-buttons" class="tool-buttons"></div>
+          <div class="quick-launch-hint">
+            <span class="key-hint">[T]</span> New Terminal
+            <span class="key-hint">[S]</span> Settings
+            <span class="key-hint">[?]</span> Help
+          </div>
+        </div>
+      </div>
+
+      <!-- Main workspace (shown when terminals are active) -->
+      <div id="workspace" class="workspace hidden">
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar hidden">
+          <div class="sidebar-header">
+            <span class="sidebar-title">Files</span>
+            <button id="sidebar-close" class="sidebar-btn" title="Close sidebar">✕</button>
+          </div>
+          <div id="file-tree" class="file-tree"></div>
+        </div>
+
+        <!-- Terminal area -->
+        <div class="terminal-area">
+          <!-- Main terminal -->
+          <div id="main-terminal-container" class="terminal-container main-terminal">
+            <div class="terminal-header">
+              <div class="terminal-tabs" id="main-terminal-tabs"></div>
+              <div class="terminal-actions">
+                <button id="btn-sidebar-toggle" class="toolbar-btn" title="Toggle file tree">☰</button>
+                <button id="btn-add-terminal" class="toolbar-btn" title="New terminal">+</button>
+                <button id="btn-home" class="toolbar-btn" title="Home">⌂</button>
+              </div>
+            </div>
+            <div id="main-terminal" class="terminal-viewport"></div>
+          </div>
+
+          <!-- Secondary terminal panel (collapsible) -->
+          <div id="secondary-panel" class="secondary-panel hidden">
+            <div id="panel-resize-handle" class="resize-handle"></div>
+            <div class="terminal-header secondary-header">
+              <div class="terminal-tabs" id="secondary-terminal-tabs"></div>
+              <div class="terminal-actions">
+                <button id="btn-add-secondary" class="toolbar-btn" title="New secondary terminal">+</button>
+                <button id="btn-collapse-panel" class="toolbar-btn" title="Collapse panel">▼</button>
+              </div>
+            </div>
+            <div id="secondary-terminal" class="terminal-viewport"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
