@@ -14,6 +14,7 @@ struct AppState {
     pty_manager: PtyManager,
     settings: Mutex<Settings>,
     config_dir: PathBuf,
+    force_new_session: bool,
 }
 
 #[tauri::command]
@@ -25,18 +26,17 @@ fn spawn_terminal(
     args: Vec<String>,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
 ) -> Result<TerminalInfo, String> {
+    // Use provided cwd, or fall back to settings default_cwd
+    let effective_cwd = cwd.or_else(|| state.settings.lock().default_cwd.clone());
     state
         .pty_manager
-        .spawn_terminal(&app, label, command, args, cols, rows)
+        .spawn_terminal(&app, label, command, args, cols, rows, effective_cwd)
 }
 
 #[tauri::command]
-fn write_terminal(
-    state: State<'_, Arc<AppState>>,
-    id: String,
-    data: String,
-) -> Result<(), String> {
+fn write_terminal(state: State<'_, Arc<AppState>>, id: String, data: String) -> Result<(), String> {
     state.pty_manager.write_to_terminal(&id, &data)
 }
 
@@ -92,13 +92,25 @@ fn clear_session(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     SavedSession::clear(&state.config_dir)
 }
 
+#[tauri::command]
+fn has_saved_session(state: State<'_, Arc<AppState>>) -> bool {
+    if state.force_new_session {
+        return false;
+    }
+    let session = SavedSession::load(&state.config_dir);
+    !session.terminals.is_empty()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let force_new = std::env::args().any(|a| a == "--new");
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
+        .setup(move |app| {
             let config_dir = app
                 .path()
                 .app_config_dir()
@@ -110,6 +122,7 @@ pub fn run() {
                 pty_manager: PtyManager::new(),
                 settings: Mutex::new(settings),
                 config_dir,
+                force_new_session: force_new,
             });
 
             app.manage(state);
@@ -127,6 +140,7 @@ pub fn run() {
             save_session,
             load_session,
             clear_session,
+            has_saved_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running CLIDE");

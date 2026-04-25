@@ -39,6 +39,7 @@ impl PtyManager {
         args: Vec<String>,
         cols: u16,
         rows: u16,
+        cwd: Option<String>,
     ) -> Result<TerminalInfo, String> {
         let pty_system = native_pty_system();
 
@@ -57,8 +58,15 @@ impl PtyManager {
         for arg in &args {
             cmd.arg(arg);
         }
-        // Inherit environment
         cmd.env("TERM", "xterm-256color");
+
+        // Set working directory
+        if let Some(ref dir) = cwd {
+            let path = std::path::Path::new(dir);
+            if path.is_dir() {
+                cmd.cwd(path);
+            }
+        }
 
         let _child = pair
             .slave

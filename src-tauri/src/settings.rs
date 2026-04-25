@@ -17,7 +17,9 @@ pub struct Settings {
     pub theme: String,
     pub font_size: u16,
     pub font_family: String,
+    pub font_color: Option<String>,
     pub default_shell: Option<String>,
+    pub default_cwd: Option<String>,
 }
 
 impl Default for Settings {
@@ -45,11 +47,27 @@ impl Default for Settings {
                     shortcut: "A".into(),
                     color: "#16a34a".into(),
                 },
+                ToolConfig {
+                    name: "Copilot CLI".into(),
+                    command: "gh".into(),
+                    args: vec!["copilot".into()],
+                    shortcut: "O".into(),
+                    color: "#6e40c9".into(),
+                },
+                ToolConfig {
+                    name: "Cursor CLI".into(),
+                    command: "cursor".into(),
+                    args: vec![],
+                    shortcut: "U".into(),
+                    color: "#00b4d8".into(),
+                },
             ],
             theme: "dark".into(),
             font_size: 14,
             font_family: "Menlo, Monaco, 'Courier New', monospace".into(),
+            font_color: None,
             default_shell: None,
+            default_cwd: None,
         }
     }
 }
@@ -80,12 +98,14 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_default_settings_has_three_tools() {
+    fn test_default_settings_has_all_tools() {
         let settings = Settings::default();
-        assert_eq!(settings.tools.len(), 3);
+        assert_eq!(settings.tools.len(), 5);
         assert_eq!(settings.tools[0].name, "Claude Code");
         assert_eq!(settings.tools[1].name, "Gemini CLI");
         assert_eq!(settings.tools[2].name, "Aider");
+        assert_eq!(settings.tools[3].name, "Copilot CLI");
+        assert_eq!(settings.tools[4].name, "Cursor CLI");
     }
 
     #[test]
@@ -99,7 +119,7 @@ mod tests {
 
         let loaded = Settings::load(&dir);
         assert_eq!(loaded.font_size, 18);
-        assert_eq!(loaded.tools.len(), 3);
+        assert_eq!(loaded.tools.len(), 5);
 
         let _ = fs::remove_dir_all(&dir);
     }

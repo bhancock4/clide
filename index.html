@@ -10,11 +10,20 @@
 
   <body>
     <div id="app">
-      <!-- Welcome screen (shown when no terminals are open) -->
+      <!-- Welcome screen -->
       <div id="welcome-screen" class="welcome-screen">
         <pre id="ascii-logo" class="ascii-logo"></pre>
         <div class="welcome-subtitle">Command Line Integrated Development Environment</div>
         <div id="clyde-mascot" class="clyde-mascot"></div>
+        <!-- Session restore prompt (shown when a saved session exists) -->
+        <div id="session-prompt" class="session-prompt hidden">
+          <div class="session-prompt-title">Previous session found</div>
+          <div class="session-prompt-buttons">
+            <button id="btn-restore-session" class="tool-btn session-btn restore-btn">Restore Session</button>
+            <button id="btn-new-session" class="tool-btn session-btn">New Session</button>
+          </div>
+        </div>
+
         <div class="quick-launch">
           <div class="quick-launch-title">Quick Launch</div>
           <div id="tool-buttons" class="tool-buttons"></div>
@@ -26,43 +35,47 @@
         </div>
       </div>
 
-      <!-- Main workspace (shown when terminals are active) -->
+      <!-- Main workspace -->
       <div id="workspace" class="workspace hidden">
         <!-- Sidebar -->
         <div id="sidebar" class="sidebar hidden">
           <div class="sidebar-header">
             <span class="sidebar-title">Files</span>
-            <button id="sidebar-close" class="sidebar-btn" title="Close sidebar">✕</button>
+            <button id="sidebar-close" class="sidebar-btn" title="Close sidebar">&#x2715;</button>
           </div>
           <div id="file-tree" class="file-tree"></div>
         </div>
 
-        <!-- Terminal area -->
-        <div class="terminal-area">
-          <!-- Main terminal -->
-          <div id="main-terminal-container" class="terminal-container main-terminal">
+        <!-- Terminal area: horizontal split -->
+        <div class="terminal-row">
+          <!-- Main terminal pane -->
+          <div class="terminal-container">
             <div class="terminal-header">
               <div class="terminal-tabs" id="main-terminal-tabs"></div>
               <div class="terminal-actions">
-                <button id="btn-sidebar-toggle" class="toolbar-btn" title="Toggle file tree">☰</button>
-                <button id="btn-add-terminal" class="toolbar-btn" title="New terminal">+</button>
-                <button id="btn-home" class="toolbar-btn" title="Home">⌂</button>
+                <button id="btn-sidebar-toggle" class="toolbar-btn" title="Toggle file tree">&#x2630;</button>
+                <button id="btn-split-view" class="toolbar-btn" title="Split view (Cmd+\)">&#x2502;</button>
+                <button id="btn-add-terminal" class="toolbar-btn" title="New terminal (Cmd+N)">+</button>
+                <button id="btn-settings" class="toolbar-btn" title="Settings (Cmd+,)">&#x2699;</button>
+                <button id="btn-home" class="toolbar-btn" title="Home">&#x2302;</button>
               </div>
             </div>
             <div id="main-terminal" class="terminal-viewport"></div>
           </div>
 
-          <!-- Secondary terminal panel (collapsible) -->
-          <div id="secondary-panel" class="secondary-panel hidden">
-            <div id="panel-resize-handle" class="resize-handle"></div>
-            <div class="terminal-header secondary-header">
-              <div class="terminal-tabs" id="secondary-terminal-tabs"></div>
-              <div class="terminal-actions">
-                <button id="btn-add-secondary" class="toolbar-btn" title="New secondary terminal">+</button>
-                <button id="btn-collapse-panel" class="toolbar-btn" title="Collapse panel">▼</button>
+          <!-- Split pane (side-by-side, secondary terminals) -->
+          <div id="split-panel" class="split-panel hidden">
+            <div id="split-resize-handle" class="resize-handle-vertical"></div>
+            <div class="split-panel-inner">
+              <div class="terminal-header split-header">
+                <div class="terminal-tabs" id="secondary-terminal-tabs"></div>
+                <div class="terminal-actions">
+                  <button id="btn-add-secondary" class="toolbar-btn" title="New terminal (Cmd+Shift+N)">+</button>
+                  <button id="btn-collapse-panel" class="toolbar-btn" title="Close split">&#x2715;</button>
+                </div>
               </div>
+              <div id="split-terminal" class="terminal-viewport"></div>
             </div>
-            <div id="secondary-terminal" class="terminal-viewport"></div>
           </div>
         </div>
       </div>

@@ -50,11 +50,11 @@ html, body, #app {
 }
 
 .ascii-logo {
-  color: var(--accent-orange);
+  color: #c9a227;
   font-size: 10px;
   line-height: 1.15;
   text-align: center;
-  text-shadow: 0 0 20px rgba(217, 119, 6, 0.3);
+  text-shadow: 0 0 20px rgba(201, 162, 39, 0.25);
 }
 
 .welcome-subtitle {
@@ -71,6 +71,40 @@ html, body, #app {
   text-align: center;
   white-space: pre;
   margin-bottom: 12px;
+}
+
+/* Session restore prompt */
+.session-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent-orange);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.session-prompt-title {
+  font-size: 13px;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.session-prompt-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.session-btn.restore-btn {
+  border-color: var(--accent-orange);
+  color: var(--accent-orange);
+}
+
+.session-btn.restore-btn:hover {
+  background: var(--accent-orange);
+  color: var(--bg-primary);
 }
 
 .quick-launch {
@@ -197,10 +231,19 @@ html, body, #app {
   min-width: 0;
 }
 
+/* Horizontal row for main + split */
+.terminal-row {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 100px;
+}
+
 .terminal-container {
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-width: 200px;
   min-height: 100px;
 }
 
@@ -220,6 +263,11 @@ html, body, #app {
   gap: 2px;
   overflow-x: auto;
   flex: 1;
+  scrollbar-width: none;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .terminal-tab {
@@ -253,6 +301,19 @@ html, body, #app {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.terminal-tab .tab-label {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminal-tab .tab-num {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: 2px;
+  opacity: 0.6;
 }
 
 .terminal-tab .tab-close {
@@ -290,11 +351,44 @@ html, body, #app {
 
 .terminal-viewport {
   flex: 1;
-  padding: 4px;
   overflow: hidden;
+  position: relative;
 }
 
-/* Secondary Panel */
+/* Split Panel (side-by-side) */
+.split-panel {
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 50%;
+  min-width: 200px;
+  max-width: calc(100% - 300px);
+  border-left: 1px solid var(--border-color);
+}
+
+.split-panel-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.split-header {
+  background: var(--bg-tertiary);
+}
+
+.resize-handle-vertical {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.resize-handle-vertical:hover {
+  background: var(--accent-orange);
+}
+
+/* Secondary Panel (bottom) */
 .secondary-panel {
   display: flex;
   flex-direction: column;
@@ -321,10 +415,19 @@ html, body, #app {
 /* xterm overrides */
 .terminal-viewport .xterm {
   height: 100%;
+  padding: 4px;
 }
 
+/* Hide native scrollbar — xterm handles scrolling internally.
+   This prevents the scrollbar from changing container width
+   and causing PTY/xterm column count mismatches. */
 .terminal-viewport .xterm-viewport {
-  overflow-y: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none !important;
+}
+
+.terminal-viewport .xterm-viewport::-webkit-scrollbar {
+  display: none !important;
 }
 
 /* Scrollbar styling */
