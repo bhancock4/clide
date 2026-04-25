@@ -1,175 +1,125 @@
-import SwiftUI
+import AppKit
+import SwiftTerm
 
 @main
-struct CLIDEApp: App {
-    @StateObject private var manager: SessionManager
-    @State private var showWelcome = true
-    @State private var splitVisible = false
-    @State private var showSettings = false
-    @State private var settings: AppSettings
-    @State private var hasSavedSession: Bool
+enum CLIDEEntry {
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.regular)
+        let delegate = CLIDEAppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+}
 
-    private let forceNew: Bool
+class CLIDEAppDelegate: NSObject, NSApplicationDelegate {
+    var windowController: MainWindowController!
 
-    init() {
-        let s = AppSettings.load()
-        _settings = State(initialValue: s)
-        _manager = StateObject(wrappedValue: SessionManager(settings: s))
-
-        let forceNew = CommandLine.arguments.contains("--new")
-        self.forceNew = forceNew
-
-        let saved = SavedSession.load()
-        _hasSavedSession = State(initialValue: !forceNew && saved.hasSavedTerminals)
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let settings = AppSettings.load()
+        windowController = MainWindowController(settings: settings)
+        setupMenus()
     }
 
-    var body: some Scene {
-        WindowGroup {
-            ZStack {
-                if showWelcome {
-                    WelcomeView(
-                        tools: settings.tools,
-                        hasSavedSession: hasSavedSession,
-                        onLaunchTool: { tool in
-                            launchTool(tool)
-                        },
-                        onNewTerminal: {
-                            manager.createSession(label: "Terminal", panel: .main)
-                            showWelcome = false
-                        },
-                        onRestoreSession: {
-                            manager.restoreSession()
-                            splitVisible = !manager.secondarySessions.isEmpty
-                            showWelcome = false
-                            hasSavedSession = false
-                        },
-                        onOpenSettings: {
-                            showSettings = true
-                        }
-                    )
-                    .onAppear {
-                        setupKeyboardShortcuts()
-                    }
-                } else {
-                    WorkspaceView(
-                        manager: manager,
-                        splitVisible: $splitVisible,
-                        onHome: {
-                            manager.saveSession()
-                            showWelcome = true
-                        },
-                        onOpenSettings: {
-                            showSettings = true
-                        }
-                    )
-                }
-            }
-            .frame(minWidth: 800, minHeight: 500)
-            .sheet(isPresented: $showSettings) {
-                SettingsView(settings: $settings)
-            }
-            .onDisappear {
-                manager.saveSession()
-            }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        windowController.manager.saveSession()
+    }
+
+    private func setupMenus() {
+        let mainMenu = NSMenu()
+
+        // App menu
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Settings...", action: #selector(openSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit CLIDE", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let appMenuItem = NSMenuItem()
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+
+        // File menu
+        let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "New Terminal", action: #selector(newTerminal), keyEquivalent: "n").target = self
+        let newSplitItem = NSMenuItem(title: "New Split Terminal", action: #selector(newSplitTerminal), keyEquivalent: "N")
+        newSplitItem.keyEquivalentModifierMask = [.command, .shift]
+        newSplitItem.target = self
+        fileMenu.addItem(newSplitItem)
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(withTitle: "Close Tab", action: #selector(closeTab), keyEquivalent: "w").target = self
+        let fileMenuItem = NSMenuItem()
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        // View menu
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(withTitle: "Toggle Split", action: #selector(toggleSplit), keyEquivalent: "\\").target = self
+
+        viewMenu.addItem(.separator())
+
+        let prevTab = NSMenuItem(title: "Previous Tab", action: #selector(prevTabAction), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        prevTab.keyEquivalentModifierMask = [.command, .shift]
+        prevTab.target = self
+        viewMenu.addItem(prevTab)
+
+        let nextTab = NSMenuItem(title: "Next Tab", action: #selector(nextTabAction), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        nextTab.keyEquivalentModifierMask = [.command, .shift]
+        nextTab.target = self
+        viewMenu.addItem(nextTab)
+
+        viewMenu.addItem(.separator())
+
+        for i in 1...9 {
+            let item = NSMenuItem(title: "Tab \(i)", action: #selector(selectTabAction(_:)), keyEquivalent: "\(i)")
+            item.tag = i - 1
+            item.target = self
+            viewMenu.addItem(item)
         }
-        .windowStyle(.titleBar)
-        .defaultSize(width: 1280, height: 800)
-        .commands {
-            CommandGroup(replacing: .newItem) {
-                Button("New Terminal") {
-                    manager.createSession(label: "Terminal", panel: .main)
-                    showWelcome = false
-                }
-                .keyboardShortcut("n")
 
-                Button("New Split Terminal") {
-                    splitVisible = true
-                    manager.createSession(label: "Terminal", panel: .secondary)
-                    showWelcome = false
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-            }
+        let viewMenuItem = NSMenuItem()
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
 
-            CommandGroup(after: .toolbar) {
-                Button("Toggle Split View") {
-                    toggleSplit()
-                }
-                .keyboardShortcut("\\")
+        NSApp.mainMenu = mainMenu
+    }
 
-                Divider()
+    // MARK: - Menu Actions
 
-                // Tab switching
-                ForEach(1...9, id: \.self) { num in
-                    Button("Tab \(num)") {
-                        manager.selectTab(index: num - 1, panel: .main)
-                    }
-                    .keyboardShortcut(KeyEquivalent(Character("\(num)")))
-                }
+    @objc func newTerminal() {
+        windowController.welcomeDidSelectNewTerminal()
+    }
 
-                Divider()
+    @objc func newSplitTerminal() {
+        windowController.manager.createSession(label: "Terminal", panel: .secondary)
+        // Ensure split is visible — handled in MainWindowController
+    }
 
-                Button("Previous Tab") {
-                    manager.cycleTab(panel: .main, forward: false)
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [.command, .shift])
-
-                Button("Next Tab") {
-                    manager.cycleTab(panel: .main, forward: true)
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .shift])
-            }
-
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings...") {
-                    showSettings = true
-                }
-                .keyboardShortcut(",")
-            }
+    @objc func closeTab() {
+        if let active = windowController.manager.activeSession(for: .main) {
+            windowController.tabBarDidCloseTab(active.id)
         }
     }
 
-    private func launchTool(_ tool: ToolConfig) {
-        manager.createSession(
-            label: tool.name,
-            command: tool.command,
-            args: tool.args,
-            panel: .main
-        )
-        showWelcome = false
+    @objc func toggleSplit() {
+        windowController.toggleSplit()
     }
 
-    private func toggleSplit() {
-        if splitVisible {
-            splitVisible = false
-        } else {
-            splitVisible = true
-            if manager.secondarySessions.isEmpty {
-                manager.createSession(label: "Terminal", panel: .secondary)
-            }
-        }
+    @objc func prevTabAction() {
+        windowController.cycleTab(forward: false)
     }
 
-    private func setupKeyboardShortcuts() {
-        // Welcome screen key handlers are handled by SwiftUI .commands
-        // Tool shortcuts on welcome screen need NSEvent monitor
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard showWelcome, !event.modifierFlags.contains(.command) else { return event }
+    @objc func nextTabAction() {
+        windowController.cycleTab(forward: true)
+    }
 
-            let key = event.characters?.uppercased() ?? ""
-            if let tool = settings.tools.first(where: { $0.shortcut.uppercased() == key }) {
-                launchTool(tool)
-                return nil
-            }
-            if key == "T" {
-                manager.createSession(label: "Terminal", panel: .main)
-                showWelcome = false
-                return nil
-            }
-            if key == "S" {
-                showSettings = true
-                return nil
-            }
-            return event
-        }
+    @objc func selectTabAction(_ sender: NSMenuItem) {
+        windowController.selectTab(index: sender.tag)
+    }
+
+    @objc func openSettings() {
+        windowController.welcomeDidSelectSettings()
     }
 }
