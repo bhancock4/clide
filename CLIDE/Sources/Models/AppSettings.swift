@@ -8,6 +8,7 @@ struct AppSettings: Codable {
     var fontColor: String?
     var defaultShell: String?
     var defaultCwd: String?
+    var promptForDirectory: Bool?
 
     static let `default` = AppSettings(
         tools: ToolConfig.defaults,

@@ -6,7 +6,7 @@ class SettingsPanel {
         var editedSettings = settings
 
         let sheet = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -17,7 +17,7 @@ class SettingsPanel {
         contentView.wantsLayer = true
         sheet.contentView = contentView
 
-        var y: CGFloat = 280
+        var y: CGFloat = 320
         let leftMargin: CGFloat = 20
         let fieldWidth: CGFloat = 420
 
@@ -58,7 +58,15 @@ class SettingsPanel {
                 cwdField.stringValue = url.path
             }
         }
-        y -= 36
+        y -= 28
+
+        // Prompt for directory checkbox
+        let promptCheck = NSButton(checkboxWithTitle: "Prompt for directory on each new terminal", target: nil, action: nil)
+        promptCheck.font = Theme.fontSmall
+        promptCheck.state = editedSettings.promptForDirectory == true ? .on : .off
+        promptCheck.frame = NSRect(x: leftMargin, y: y, width: fieldWidth, height: 20)
+        contentView.addSubview(promptCheck)
+        y -= 30
 
         // Font Size
         let fsLabel = NSTextField(labelWithString: "Font Size")
@@ -131,6 +139,7 @@ class SettingsPanel {
         contentView.addSubview(saveBtn)
         BlockTarget.shared.register(saveBtn) {
             editedSettings.defaultCwd = cwdField.stringValue.isEmpty ? nil : cwdField.stringValue
+            editedSettings.promptForDirectory = promptCheck.state == .on ? true : nil
             editedSettings.fontSize = Int(fsField.stringValue) ?? 14
             editedSettings.defaultShell = shellField.stringValue.isEmpty ? nil : shellField.stringValue
 

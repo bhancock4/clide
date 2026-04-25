@@ -19,6 +19,9 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     private var workspaceView = NSView()
 
     private var splitVisible = false
+    /// The working directory established by the first terminal in this session.
+    /// Subsequent terminals reuse this unless promptForDirectory is enabled.
+    private var sessionCwd: String?
 
     init(settings: AppSettings) {
         self.settings = settings
@@ -251,8 +254,20 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
 
     // MARK: - Terminal Management
 
+    /// Returns a working directory — prompts on first launch or if setting enabled, otherwise reuses.
+    private func resolveWorkingDirectory() -> String? {
+        if let cwd = sessionCwd, settings.promptForDirectory != true {
+            return cwd
+        }
+        guard let cwd = NewSessionDialog.prompt(defaultCwd: sessionCwd ?? settings.defaultCwd, in: window) else {
+            return nil
+        }
+        if sessionCwd == nil { sessionCwd = cwd }
+        return cwd
+    }
+
     private func createMainTerminal() {
-        guard let cwd = NewSessionDialog.prompt(defaultCwd: settings.defaultCwd, in: window) else { return }
+        guard let cwd = resolveWorkingDirectory() else { return }
         manager.createSession(label: "Terminal", panel: .main, cwd: cwd)
         if welcomeVC != nil { showWorkspace() }
         refreshTabs()
@@ -260,7 +275,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     }
 
     private func createSplitTerminal() {
-        guard let cwd = NewSessionDialog.prompt(defaultCwd: settings.defaultCwd, in: window) else { return }
+        guard let cwd = resolveWorkingDirectory() else { return }
         manager.createSession(label: "Terminal", panel: .secondary, cwd: cwd)
         refreshTabs()
         showActiveTerminal(panel: .secondary)
@@ -391,7 +406,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     // MARK: - WelcomeViewControllerDelegate
 
     func welcomeDidSelectTool(_ tool: ToolConfig) {
-        guard let cwd = NewSessionDialog.prompt(defaultCwd: settings.defaultCwd, in: window) else { return }
+        guard let cwd = resolveWorkingDirectory() else { return }
         manager.createSession(label: tool.name, command: tool.command, args: tool.args, panel: .main, cwd: cwd)
         showWorkspace()
         showActiveTerminal(panel: .main)
