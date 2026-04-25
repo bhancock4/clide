@@ -11,156 +11,147 @@
  ╚═════╝╚══════╝╚═╝╚═════╝ ╚══════╝
 ```
 
-A purpose-built desktop workspace for CLI-based AI development tools. CLIDE provides an opinionated terminal window manager designed around the workflow of using Claude Code, Gemini CLI, Aider, and other AI coding assistants.
+A native macOS desktop workspace for CLI-based AI development tools. CLIDE gives you a purpose-built terminal window manager designed around the workflow of using Claude Code, Gemini CLI, Aider, Copilot CLI, Cursor, and other AI coding assistants.
+
+Built with Swift, SwiftTerm, and AppKit for pixel-perfect terminal rendering.
 
 ## Why CLIDE?
 
 CLI AI tools are becoming primary development environments, but they're stuck in generic terminals. CLIDE gives you:
 
-- **Quick-launch** for your favorite CLI dev tools with one keypress
-- **Two-pane terminal layout** — main AI terminal + collapsible secondary panel with multiple tabs
-- **Bidirectional send-to-terminal** — highlight text in one terminal, send it to another
-- **File tree sidebar** for quick navigation
-- **Session management** — save and restore your workspace
-- **Dark, terminal-native UI** that feels right at home
+- **Quick-launch** your favorite CLI dev tools with one keypress
+- **Split-pane layout** — main AI terminal on the left, tabbed terminals on the right
+- **Bidirectional paste** — select text in any terminal, right-click to paste it into another
+- **Session persistence** — save and restore your workspace across restarts
+- **Native terminal rendering** — SwiftTerm handles PTY, ANSI, scrollback, and resizing correctly (no xterm.js hacks)
+- **Dark, terminal-native UI** with Clyde the robot mascot
 
 ## Quick Start
 
 ### Prerequisites
 
-- [Rust](https://rustup.rs/) (1.70+)
-- [Node.js](https://nodejs.org/) (18+)
-- npm
+- macOS 13+ (Ventura or later)
+- Xcode Command Line Tools: `xcode-select --install`
 
-### Development
+### Run
 
 ```bash
-# Install dependencies
-npm install
-
-# Run in development mode (hot-reload)
-npm run tauri dev
-
-# Run tests
-npm run test:ci                    # Frontend tests
-cd src-tauri && cargo test         # Backend tests
-
-# Build for production
-npm run tauri build
+cd CLIDE
+swift run
 ```
 
-### Keyboard Shortcuts (Welcome Screen)
+### Run with a fresh session (skip restore prompt)
+
+```bash
+swift run CLIDE -- --new
+```
+
+### Run tests
+
+```bash
+cd CLIDE
+swift test
+```
+
+## Keyboard Shortcuts
+
+### Welcome Screen
 
 | Key | Action |
 |-----|--------|
 | `C` | Launch Claude Code |
 | `G` | Launch Gemini CLI |
 | `A` | Launch Aider |
+| `O` | Launch Copilot CLI |
+| `U` | Launch Cursor CLI |
 | `T` | New plain terminal |
-| `S` | Settings |
-| `?` | Help |
+| `S` | Open settings |
+
+### Workspace
+
+| Shortcut | Action |
+|----------|--------|
+| `Cmd+\` | Toggle split view |
+| `Cmd+N` | New terminal (main pane) |
+| `Cmd+Shift+N` | New terminal (split pane) |
+| `Cmd+W` | Close active terminal |
+| `Cmd+Shift+Left/Right` | Cycle split pane tabs |
+| `Cmd+,` | Settings |
 
 ## Architecture
 
-CLIDE is built with [Tauri v2](https://v2.tauri.app/), combining a Rust backend with a web frontend:
+Native macOS app built with Swift and AppKit:
 
 ```
-clide/
-├── src-tauri/          # Rust backend
-│   └── src/
-│       ├── lib.rs      # Tauri app setup and command handlers
-│       ├── main.rs     # Entry point
-│       ├── pty.rs      # PTY session manager (terminal spawning, I/O, resize)
-│       └── settings.rs # Settings persistence (JSON)
-├── src/                # TypeScript frontend
-│   ├── main.ts         # App initialization, UI wiring, keyboard shortcuts
-│   ├── terminal-manager.ts  # xterm.js terminal lifecycle management
-│   ├── branding.ts     # ASCII art, mascot, version
-│   └── styles.css      # Dark terminal-native theme
-└── index.html          # App shell
+CLIDE/
+├── Sources/
+│   ├── CLIDEApp.swift              # Entry point, NSApplication lifecycle, menus
+│   ├── Models/
+│   │   ├── AppSettings.swift       # Settings model with JSON persistence
+│   │   ├── SavedSession.swift      # Session save/restore model
+│   │   └── ToolConfig.swift        # CLI tool definitions
+│   ├── Terminal/
+│   │   ├── TerminalSession.swift   # SwiftTerm wrapper, PTY lifecycle, process delegate
+│   │   └── SessionManager.swift    # Multi-session management, tab state
+│   └── AppKit/
+│       ├── MainWindowController.swift  # Window layout, split view, terminal attachment
+│       ├── WelcomeViewController.swift # Welcome screen with branding and tool buttons
+│       ├── TerminalTabBar.swift     # Tab bar with colored dots, close buttons, rename
+│       ├── SettingsPanel.swift      # Settings sheet with folder picker, color well
+│       ├── NewSessionDialog.swift   # Working directory prompt on new session
+│       ├── SendToMenu.swift         # Right-click context menu for cross-terminal paste
+│       ├── AppIcon.swift            # Programmatic Clyde icon for dock
+│       └── Theme.swift              # Color and font constants
+├── Tests/
+│   └── SettingsTests.swift          # Settings, session, and tool config tests
+└── Package.swift                    # Swift Package Manager manifest
 ```
 
-### Backend (Rust)
+### Key Design Decisions
 
-- **PTY Manager** (`pty.rs`): Spawns and manages pseudo-terminal sessions using `portable-pty`. Each terminal gets its own PTY with a reader thread that emits data events to the frontend via Tauri's event system.
-- **Settings** (`settings.rs`): Persists user configuration (tool definitions, theme, font settings) as JSON in the app's config directory.
-- **Commands** (`lib.rs`): Tauri commands for spawning, writing to, resizing, and closing terminals, plus settings CRUD.
-
-### Frontend (TypeScript)
-
-- **Terminal Manager** (`terminal-manager.ts`): Manages xterm.js terminal instances, handles PTY I/O bridging, tab state, and panel assignments.
-- **Main** (`main.ts`): Orchestrates the UI — welcome screen, workspace layout, tab rendering, keyboard shortcuts, and panel resizing.
-
-### Data Flow
-
-```
-User keypress → xterm.js → Tauri command (write_terminal) → PTY stdin
-PTY stdout → Reader thread → Tauri event (pty-data-{id}) → xterm.js → Screen
-```
+- **Pure AppKit, no SwiftUI** — SwiftUI's responder chain intercepts keyboard events before they reach NSView-based terminal views. AppKit gives full control over first responder management.
+- **SwiftTerm for terminal rendering** — handles PTY spawning, ANSI parsing, cursor positioning, scrollback, and resize natively. No web layer means no dimension mismatches.
+- **Login shell for tool launch** — tools like `claude` and `gemini` are launched by starting a login shell first, then sending the command. This ensures the user's full PATH is available.
+- **Programmatic app icon** — generated via Core Graphics at launch so the app works as a bare `swift run` executable without a .app bundle.
 
 ## Configuration
 
-Settings are stored in your platform's app config directory:
-
-- **macOS**: `~/Library/Application Support/com.clide.app/settings.json`
-- **Linux**: `~/.config/com.clide.app/settings.json`
-- **Windows**: `%APPDATA%/com.clide.app/settings.json`
-
-### Default Tool Configuration
+Settings are stored at `~/Library/Application Support/com.clide.app/settings.json`:
 
 ```json
 {
   "tools": [
     { "name": "Claude Code", "command": "claude", "args": [], "shortcut": "C", "color": "#d97706" },
     { "name": "Gemini CLI", "command": "gemini", "args": [], "shortcut": "G", "color": "#2563eb" },
-    { "name": "Aider", "command": "aider", "args": [], "shortcut": "A", "color": "#16a34a" }
+    { "name": "Aider", "command": "aider", "args": [], "shortcut": "A", "color": "#16a34a" },
+    { "name": "Copilot CLI", "command": "gh", "args": ["copilot"], "shortcut": "O", "color": "#6e40c9" },
+    { "name": "Cursor CLI", "command": "cursor", "args": [], "shortcut": "U", "color": "#00b4d8" }
   ],
-  "theme": "dark",
-  "font_size": 14,
-  "font_family": "Menlo, Monaco, 'Courier New', monospace"
+  "fontSize": 14,
+  "fontColor": "#e6edf3",
+  "defaultCwd": "/Users/you/Code",
+  "promptForDirectory": false
 }
 ```
 
-## Testing
-
-Both backend and frontend have unit tests:
-
-```bash
-# Rust tests (PTY manager, settings persistence)
-cd src-tauri && cargo test
-
-# TypeScript tests (branding, UI logic)
-npm run test:ci
-
-# Watch mode for frontend tests
-npm run test
-```
-
-Tests run automatically before production builds via `npm run build`.
-
-## Building for Distribution
-
-```bash
-# Build for current platform
-npm run tauri build
-```
-
-This produces platform-specific installers:
-- **macOS**: `.dmg` in `src-tauri/target/release/bundle/dmg/`
-- **Windows**: `.msi` in `src-tauri/target/release/bundle/msi/`
-- **Linux**: `.AppImage` and `.deb` in `src-tauri/target/release/bundle/`
+Edit via the Settings panel (`Cmd+,`) or directly in the JSON file.
 
 ## Roadmap
 
-- [ ] Bidirectional send-to-terminal (highlight and send)
-- [ ] Integrated diff viewer with green/red highlighting
-- [ ] File tree sidebar with file explorer
-- [ ] Session save/restore
+- [x] Native terminal rendering (SwiftTerm)
+- [x] Quick-launch for CLI AI tools
+- [x] Split-pane layout with tabbed terminals
+- [x] Bidirectional paste between terminals
+- [x] Session save/restore with startup prompt
+- [x] Settings panel with folder picker and color picker
+- [x] New session directory prompt
+- [x] Clyde app icon
+- [ ] File tree sidebar
+- [ ] Integrated diff viewer
 - [ ] Cost/token tracking dashboard
 - [ ] Conversation bookmarks
 - [ ] Prompt snippets library
 - [ ] Rules/config library per tool
-- [ ] Click-to-edit file viewer
 
 ## License
 
