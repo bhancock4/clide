@@ -67,22 +67,31 @@ class TerminalSession: Identifiable, ObservableObject {
         // Wire delegate back-reference after self is initialized
         delegate.session = self
 
-        // Determine what to run
-        let executable: String
-        let execArgs: [String]
-
-        if command.isEmpty || command == ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh" {
-            executable = shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-            execArgs = ["--login"]
-        } else {
-            executable = command
-            execArgs = args
-        }
-
+        // Always start a login shell — tools are launched by sending the
+        // command after the shell is ready. This ensures the user's full
+        // PATH is available (homebrew, nvm, cargo, etc).
+        let shellPath = shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shellIdiom = "-" + (shellPath as NSString).lastPathComponent
         let workingDir = cwd ?? FileManager.default.homeDirectoryForCurrentUser.path
-        let env = Self.buildEnvironment()
 
-        tv.startProcess(executable: executable, args: execArgs, environment: env, execName: nil, currentDirectory: workingDir)
+        FileManager.default.changeCurrentDirectoryPath(workingDir)
+        tv.startProcess(executable: shellPath, execName: shellIdiom)
+
+        // If a tool was requested, send the command after a brief delay
+        // to let the shell finish initializing
+        if !command.isEmpty {
+            let fullCommand: String
+            if args.isEmpty {
+                fullCommand = command
+            } else {
+                fullCommand = ([command] + args).joined(separator: " ")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak tv] in
+                guard let tv else { return }
+                let bytes = Array((fullCommand + "\n").utf8)
+                tv.send(source: tv, data: bytes[...])
+            }
+        }
     }
 
     /// Send text to this terminal's PTY input.

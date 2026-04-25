@@ -58,72 +58,11 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
         workspaceView.translatesAutoresizingMaskIntoConstraints = false
         workspaceView.wantsLayer = true
 
-        // Main panel: tab bar + terminal container
-        let mainPanel = NSView()
-        mainPanel.wantsLayer = true
+        let mainPanel = buildPanel(tabBar: mainTabBar, container: mainContainer, toolbar: buildToolbar())
+        let splitPanel = buildPanel(tabBar: splitTabBar, container: splitContainer, toolbar: buildSplitToolbar())
 
         mainTabBar.delegate = self
-        mainTabBar.translatesAutoresizingMaskIntoConstraints = false
-        mainPanel.addSubview(mainTabBar)
-
-        // Toolbar buttons (right side of main tab bar)
-        let toolbarStack = buildToolbar()
-        toolbarStack.translatesAutoresizingMaskIntoConstraints = false
-        mainPanel.addSubview(toolbarStack)
-
-        mainContainer.translatesAutoresizingMaskIntoConstraints = false
-        mainContainer.wantsLayer = true
-        mainContainer.layer?.backgroundColor = Theme.bgPrimary.cgColor
-        mainPanel.addSubview(mainContainer)
-
-        mainPanel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            mainTabBar.topAnchor.constraint(equalTo: mainPanel.topAnchor),
-            mainTabBar.leadingAnchor.constraint(equalTo: mainPanel.leadingAnchor),
-            mainTabBar.trailingAnchor.constraint(equalTo: toolbarStack.leadingAnchor),
-
-            toolbarStack.topAnchor.constraint(equalTo: mainPanel.topAnchor),
-            toolbarStack.trailingAnchor.constraint(equalTo: mainPanel.trailingAnchor, constant: -8),
-            toolbarStack.heightAnchor.constraint(equalToConstant: 32),
-
-            mainContainer.topAnchor.constraint(equalTo: mainTabBar.bottomAnchor),
-            mainContainer.leadingAnchor.constraint(equalTo: mainPanel.leadingAnchor),
-            mainContainer.trailingAnchor.constraint(equalTo: mainPanel.trailingAnchor),
-            mainContainer.bottomAnchor.constraint(equalTo: mainPanel.bottomAnchor),
-        ])
-
-        // Split panel: tab bar + terminal container
-        let splitPanel = NSView()
-        splitPanel.wantsLayer = true
-
         splitTabBar.delegate = self
-        splitTabBar.translatesAutoresizingMaskIntoConstraints = false
-        splitPanel.addSubview(splitTabBar)
-
-        let splitToolbar = buildSplitToolbar()
-        splitToolbar.translatesAutoresizingMaskIntoConstraints = false
-        splitPanel.addSubview(splitToolbar)
-
-        splitContainer.translatesAutoresizingMaskIntoConstraints = false
-        splitContainer.wantsLayer = true
-        splitContainer.layer?.backgroundColor = Theme.bgPrimary.cgColor
-        splitPanel.addSubview(splitContainer)
-
-        splitPanel.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            splitTabBar.topAnchor.constraint(equalTo: splitPanel.topAnchor),
-            splitTabBar.leadingAnchor.constraint(equalTo: splitPanel.leadingAnchor),
-            splitTabBar.trailingAnchor.constraint(equalTo: splitToolbar.leadingAnchor),
-
-            splitToolbar.topAnchor.constraint(equalTo: splitPanel.topAnchor),
-            splitToolbar.trailingAnchor.constraint(equalTo: splitPanel.trailingAnchor, constant: -8),
-            splitToolbar.heightAnchor.constraint(equalToConstant: 32),
-
-            splitContainer.topAnchor.constraint(equalTo: splitTabBar.bottomAnchor),
-            splitContainer.leadingAnchor.constraint(equalTo: splitPanel.leadingAnchor),
-            splitContainer.trailingAnchor.constraint(equalTo: splitPanel.trailingAnchor),
-            splitContainer.bottomAnchor.constraint(equalTo: splitPanel.bottomAnchor),
-        ])
 
         // NSSplitView
         splitView.isVertical = true
@@ -142,6 +81,76 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
 
         // Initially hide split panel
         splitView.arrangedSubviews[1].isHidden = true
+    }
+
+    /// Builds a panel with a fixed-height header bar on top and a clipped terminal
+    /// container below. The header bar contains the tab bar and toolbar buttons.
+    private func buildPanel(tabBar: TerminalTabBar, container: NSView, toolbar: NSStackView) -> NSView {
+        let panel = NSView()
+        panel.wantsLayer = true
+        panel.translatesAutoresizingMaskIntoConstraints = false
+
+        // Fixed-height header bar
+        let header = NSView()
+        header.wantsLayer = true
+        header.layer?.backgroundColor = Theme.bgSecondary.cgColor
+        header.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(header)
+
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(tabBar)
+
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(toolbar)
+
+        // Separator line below header
+        let separator = NSView()
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = Theme.border.cgColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(separator)
+
+        // Terminal container — clips its content
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.backgroundColor = Theme.bgPrimary.cgColor
+        container.layer?.masksToBounds = true
+        panel.addSubview(container)
+
+        let headerHeight: CGFloat = 34
+
+        NSLayoutConstraint.activate([
+            // Header: fixed height, full width, at top
+            header.topAnchor.constraint(equalTo: panel.topAnchor),
+            header.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: headerHeight),
+
+            // Tab bar fills header, leaving room for toolbar
+            tabBar.topAnchor.constraint(equalTo: header.topAnchor),
+            tabBar.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            tabBar.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            tabBar.trailingAnchor.constraint(equalTo: toolbar.leadingAnchor, constant: -4),
+
+            // Toolbar pinned to right of header
+            toolbar.topAnchor.constraint(equalTo: header.topAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
+
+            // Separator: 1px line below header
+            separator.topAnchor.constraint(equalTo: header.bottomAnchor),
+            separator.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1),
+
+            // Container: fills remaining space below separator
+            container.topAnchor.constraint(equalTo: separator.bottomAnchor),
+            container.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
+        ])
+
+        return panel
     }
 
     private func buildToolbar() -> NSStackView {
@@ -243,14 +252,16 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     // MARK: - Terminal Management
 
     private func createMainTerminal() {
-        manager.createSession(label: "Terminal", panel: .main)
+        guard let cwd = NewSessionDialog.prompt(defaultCwd: settings.defaultCwd, in: window) else { return }
+        manager.createSession(label: "Terminal", panel: .main, cwd: cwd)
         if welcomeVC != nil { showWorkspace() }
         refreshTabs()
         showActiveTerminal(panel: .main)
     }
 
     private func createSplitTerminal() {
-        manager.createSession(label: "Terminal", panel: .secondary)
+        guard let cwd = NewSessionDialog.prompt(defaultCwd: settings.defaultCwd, in: window) else { return }
+        manager.createSession(label: "Terminal", panel: .secondary, cwd: cwd)
         refreshTabs()
         showActiveTerminal(panel: .secondary)
     }
@@ -268,6 +279,9 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
         tv.removeFromSuperview()
         container.addSubview(tv)
 
+        // Set up right-click context menu for send-to-terminal
+        tv.menu = buildSendToMenu(sourceSession: session)
+
         NSLayoutConstraint.activate([
             tv.topAnchor.constraint(equalTo: container.topAnchor),
             tv.bottomAnchor.constraint(equalTo: container.bottomAnchor),
@@ -279,21 +293,47 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     }
 
     private func refreshTabs() {
-        mainTabBar.update(tabs: manager.mainSessions.map { tabInfo(for: $0, active: $0.id == manager.activeMainId) })
-        splitTabBar.update(tabs: manager.secondarySessions.map { tabInfo(for: $0, active: $0.id == manager.activeSecondaryId) })
+        mainTabBar.update(tabs: manager.mainSessions.enumerated().map { idx, s in
+            tabInfo(for: s, active: s.id == manager.activeMainId, index: idx)
+        })
+        splitTabBar.update(tabs: manager.secondarySessions.enumerated().map { idx, s in
+            tabInfo(for: s, active: s.id == manager.activeSecondaryId, index: idx)
+        })
     }
 
-    private func tabInfo(for session: TerminalSession, active: Bool) -> TerminalTabBar.TabInfo {
+    private func tabInfo(for session: TerminalSession, active: Bool, index: Int) -> TerminalTabBar.TabInfo {
         return TerminalTabBar.TabInfo(
             id: session.id,
             label: session.label,
             color: NSColor.fromHex(colorForCommand(session.command)) ?? .gray,
-            isActive: active
+            isActive: active,
+            index: index
         )
     }
 
     private func colorForCommand(_ cmd: String) -> String {
         settings.tools.first { $0.command == cmd }?.color ?? "#8b949e"
+    }
+
+    // MARK: - Send to Terminal (bidirectional)
+
+    private func buildSendToMenu(sourceSession: TerminalSession) -> NSMenu {
+        let menu = SendToMenu(manager: manager, sourceSession: sourceSession, controller: self)
+        return menu
+    }
+
+    func sendSelection(from source: TerminalSession, to target: TerminalSession, execute: Bool) {
+        guard let text = source.terminalView.getSelection(), !text.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "No text selected"
+            alert.informativeText = "Select text in the terminal first, then right-click to send it."
+            alert.runModal()
+            return
+        }
+
+        let payload = execute ? text + "\n" : text
+        let bytes = Array(payload.utf8)
+        target.terminalView.send(source: target.terminalView, data: bytes[...])
     }
 
     // MARK: - Split View
@@ -328,15 +368,9 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     }
 
     private func openSettings() {
-        // Simple settings via NSAlert for now — can be upgraded later
-        let alert = NSAlert()
-        alert.messageText = "Settings"
-        alert.informativeText = "Default CWD: \(settings.defaultCwd ?? "(none)")\nFont Size: \(settings.fontSize)\nEdit: ~/Library/Application Support/com.clide.app/settings.json"
-        alert.addButton(withTitle: "Open Settings File")
-        alert.addButton(withTitle: "OK")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSWorkspace.shared.open(AppSettings.configURL)
+        SettingsPanel.show(in: window, settings: &settings) { [weak self] newSettings in
+            self?.settings = newSettings
+            self?.manager.settings = newSettings
         }
     }
 
@@ -357,7 +391,8 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     // MARK: - WelcomeViewControllerDelegate
 
     func welcomeDidSelectTool(_ tool: ToolConfig) {
-        manager.createSession(label: tool.name, command: tool.command, args: tool.args, panel: .main)
+        guard let cwd = NewSessionDialog.prompt(defaultCwd: settings.defaultCwd, in: window) else { return }
+        manager.createSession(label: tool.name, command: tool.command, args: tool.args, panel: .main, cwd: cwd)
         showWorkspace()
         showActiveTerminal(panel: .main)
     }
