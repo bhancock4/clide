@@ -16,6 +16,7 @@ class CLIDEAppDelegate: NSObject, NSApplicationDelegate {
     var windowController: MainWindowController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppIcon.setAsAppIcon()
         let settings = AppSettings.load()
         windowController = MainWindowController(settings: settings)
         setupMenus()
@@ -69,15 +70,6 @@ class CLIDEAppDelegate: NSObject, NSApplicationDelegate {
         nextTab.keyEquivalentModifierMask = [.command, .shift]
         nextTab.target = self
         viewMenu.addItem(nextTab)
-
-        viewMenu.addItem(.separator())
-
-        for i in 1...9 {
-            let item = NSMenuItem(title: "Tab \(i)", action: #selector(selectTabAction(_:)), keyEquivalent: "\(i)")
-            item.tag = i - 1
-            item.target = self
-            viewMenu.addItem(item)
-        }
 
         let viewMenuItem = NSMenuItem()
         viewMenuItem.submenu = viewMenu

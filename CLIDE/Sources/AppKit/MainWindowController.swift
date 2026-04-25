@@ -10,7 +10,8 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     // Views
     private let rootView = NSView()
     private var welcomeVC: WelcomeViewController?
-    private let mainTabBar = TerminalTabBar()
+    private let mainLabel = NSTextField(labelWithString: "")
+    private let mainTabBar = TerminalTabBar()  // kept for compatibility but unused on main
     private let splitTabBar = TerminalTabBar()
     private let splitView = NSSplitView()
     private let mainContainer = NSView()
@@ -61,10 +62,9 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
         workspaceView.translatesAutoresizingMaskIntoConstraints = false
         workspaceView.wantsLayer = true
 
-        let mainPanel = buildPanel(tabBar: mainTabBar, container: mainContainer, toolbar: buildToolbar())
+        let mainPanel = buildMainPanel()
         let splitPanel = buildPanel(tabBar: splitTabBar, container: splitContainer, toolbar: buildSplitToolbar())
 
-        mainTabBar.delegate = self
         splitTabBar.delegate = self
 
         // NSSplitView
@@ -84,6 +84,71 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
 
         // Initially hide split panel
         splitView.arrangedSubviews[1].isHidden = true
+    }
+
+    /// Builds the main (left) panel — single terminal, no tabs, just a toolbar header.
+    private func buildMainPanel() -> NSView {
+        let panel = NSView()
+        panel.wantsLayer = true
+        panel.translatesAutoresizingMaskIntoConstraints = false
+
+        let header = NSView()
+        header.wantsLayer = true
+        header.layer?.backgroundColor = Theme.bgSecondary.cgColor
+        header.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(header)
+
+        // Label showing the active tool name
+        mainLabel.font = Theme.fontSmall
+        mainLabel.textColor = Theme.textPrimary
+        mainLabel.lineBreakMode = .byTruncatingTail
+        mainLabel.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(mainLabel)
+
+        let toolbar = buildToolbar()
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
+        header.addSubview(toolbar)
+
+        let separator = NSView()
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = Theme.border.cgColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        panel.addSubview(separator)
+
+        mainContainer.translatesAutoresizingMaskIntoConstraints = false
+        mainContainer.wantsLayer = true
+        mainContainer.layer?.backgroundColor = Theme.bgPrimary.cgColor
+        mainContainer.layer?.masksToBounds = true
+        panel.addSubview(mainContainer)
+
+        let headerHeight: CGFloat = 34
+
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: panel.topAnchor),
+            header.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: headerHeight),
+
+            mainLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 12),
+            mainLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            mainLabel.trailingAnchor.constraint(lessThanOrEqualTo: toolbar.leadingAnchor, constant: -8),
+
+            toolbar.topAnchor.constraint(equalTo: header.topAnchor),
+            toolbar.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
+
+            separator.topAnchor.constraint(equalTo: header.bottomAnchor),
+            separator.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1),
+
+            mainContainer.topAnchor.constraint(equalTo: separator.bottomAnchor),
+            mainContainer.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+            mainContainer.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+            mainContainer.bottomAnchor.constraint(equalTo: panel.bottomAnchor),
+        ])
+
+        return panel
     }
 
     /// Builds a panel with a fixed-height header bar on top and a clipped terminal
@@ -308,9 +373,14 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     }
 
     private func refreshTabs() {
-        mainTabBar.update(tabs: manager.mainSessions.enumerated().map { idx, s in
-            tabInfo(for: s, active: s.id == manager.activeMainId, index: idx)
-        })
+        // Main pane: just update the label
+        if let session = manager.activeSession(for: .main) {
+            mainLabel.stringValue = session.label
+        } else {
+            mainLabel.stringValue = ""
+        }
+
+        // Split pane: full tab bar
         splitTabBar.update(tabs: manager.secondarySessions.enumerated().map { idx, s in
             tabInfo(for: s, active: s.id == manager.activeSecondaryId, index: idx)
         })
@@ -392,15 +462,15 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalTab
     // MARK: - Tab Cycling (called from app delegate)
 
     func cycleTab(forward: Bool) {
-        manager.cycleTab(panel: .main, forward: forward)
+        manager.cycleTab(panel: .secondary, forward: forward)
         refreshTabs()
-        showActiveTerminal(panel: .main)
+        showActiveTerminal(panel: .secondary)
     }
 
     func selectTab(index: Int) {
-        manager.selectTab(index: index, panel: .main)
+        manager.selectTab(index: index, panel: .secondary)
         refreshTabs()
-        showActiveTerminal(panel: .main)
+        showActiveTerminal(panel: .secondary)
     }
 
     // MARK: - WelcomeViewControllerDelegate
