@@ -29,6 +29,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     // Broadcast typing — additional terminals that receive keystrokes
     var broadcastTargets: Set<UUID> = []
     private var keyMonitor: Any?
+    private var focusMonitor: Any?
 
     private var selectionMonitor: Any?
     private var selectionBar: SelectionActionBar?
@@ -696,13 +697,25 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
 
     func saveCurrentLayout(name: String) {
         var layout = manager.captureLayout(name: name, windowFrame: window.frame)
-        // If no layouts exist yet, make this the default
-        if settings.layouts == nil || settings.layouts!.isEmpty {
+        if settings.layouts?.isEmpty != false {
             layout.isDefault = true
         }
         if settings.layouts == nil { settings.layouts = [] }
-        settings.layouts!.append(layout)
-        try? settings.save()
+        settings.layouts?.append(layout)
+        saveSettingsWithAlert()
+    }
+
+    /// Save settings with error reporting to the user.
+    private func saveSettingsWithAlert() {
+        do {
+            try settings.save()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Failed to save settings"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 
     private func closeAllSessions() {
@@ -756,7 +769,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     // MARK: - TerminalCellDelegate
 
     func cellDidSelect(_ id: UUID) {
-        guard let session = manager.sessions.first(where: { $0.id == id }) else { return }
+        guard let session = manager.session(byId: id) else { return }
         // Clicking a header just focuses that terminal
         manager.setActive(id, column: session.column)
         window.makeFirstResponder(session.terminalView)
@@ -773,12 +786,13 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     }
 
     func cellDidClose(_ id: UUID) {
-        guard let session = manager.sessions.first(where: { $0.id == id }) else { return }
+        guard let session = manager.session(byId: id) else { return }
         let col = session.column
 
         removeTerminalCell(id)
         manager.closeSession(id)
         broadcastTargets.remove(id)
+        updateAllPairingIndicators()
 
         // If column is now empty and it's not column 0, remove it
         if manager.sessions(forColumn: col).isEmpty && col > 0 {
@@ -795,7 +809,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     }
 
     func cellDidDoubleClick(_ id: UUID) {
-        guard let session = manager.sessions.first(where: { $0.id == id }) else { return }
+        guard let session = manager.session(byId: id) else { return }
         let alert = NSAlert()
         alert.messageText = "Rename Terminal"
         let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
@@ -868,7 +882,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
 
         for targetId in allMembers {
             guard targetId != focused.id,
-                  let target = manager.sessions.first(where: { $0.id == targetId }) else { continue }
+                  let target = manager.session(byId: targetId) else { continue }
 
             if let chars = event.characters, !chars.isEmpty {
                 let bytes = Array(chars.utf8)
@@ -880,9 +894,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     /// Track when a terminal view gains focus by clicking in it directly.
     /// The focused terminal joins the broadcast group if broadcast is active.
     private func trackFocusChanges() {
-        // Observe first responder changes via a mouseDown monitor
-        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
-            // Defer check so first responder has updated
+        focusMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
             DispatchQueue.main.async { self?.handleFocusChange() }
             return event
         }
@@ -893,12 +905,9 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     }
 
     deinit {
-        if let monitor = selectionMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        if let monitor = keyMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
+        if let monitor = selectionMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = keyMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = focusMonitor { NSEvent.removeMonitor(monitor) }
     }
 }
 

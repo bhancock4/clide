@@ -97,7 +97,9 @@ struct SavedSession: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .prettyPrinted
         let data = try encoder.encode(self)
-        try data.write(to: Self.fileURL)
+        let tmpURL = Self.fileURL.deletingLastPathComponent().appendingPathComponent("session.tmp.json")
+        try data.write(to: tmpURL)
+        _ = try FileManager.default.replaceItemAt(Self.fileURL, withItemAt: tmpURL)
     }
 
     static func clear() {

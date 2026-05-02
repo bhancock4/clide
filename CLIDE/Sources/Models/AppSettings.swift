@@ -46,6 +46,9 @@ struct AppSettings: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(self)
-        try data.write(to: Self.configURL)
+        // Atomic write: write to temp file then rename
+        let tmpURL = Self.configURL.deletingLastPathComponent().appendingPathComponent("settings.tmp.json")
+        try data.write(to: tmpURL)
+        _ = try FileManager.default.replaceItemAt(Self.configURL, withItemAt: tmpURL)
     }
 }

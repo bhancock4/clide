@@ -145,7 +145,8 @@ class LayoutEditorViewController: NSViewController {
         btnRow.addArrangedSubview(spacer)
 
         let cancelBtn = CallbackButton(title: "Cancel", action: { [weak self] in
-            self?.view.window?.sheetParent?.endSheet(self!.view.window!)
+            guard let self, let w = self.view.window, let parent = w.sheetParent else { return }
+                parent.endSheet(w)
         })
         cancelBtn.font = Theme.font
         cancelBtn.isBordered = false

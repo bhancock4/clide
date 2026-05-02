@@ -8,10 +8,18 @@ class SessionManager: ObservableObject {
     @Published var columnCount: Int = 1
     @Published var pairingGroups: [PairingGroup] = []
 
+    /// O(1) session lookup by ID
+    private var sessionIndex: [UUID: TerminalSession] = [:]
+
     var settings: AppSettings
 
     init(settings: AppSettings) {
         self.settings = settings
+    }
+
+    /// O(1) lookup by session ID
+    func session(byId id: UUID) -> TerminalSession? {
+        sessionIndex[id]
     }
 
     // MARK: - Session Lifecycle
@@ -35,20 +43,21 @@ class SessionManager: ObservableObject {
             fontColor: settings.fontColor
         )
         sessions.append(session)
+        sessionIndex[session.id] = session
         activeIds[column] = session.id
         return session
     }
 
     func closeSession(_ id: UUID) {
-        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        guard let session = sessionIndex[id] else { return }
         let col = session.column
         sessions.removeAll { $0.id == id }
+        sessionIndex.removeValue(forKey: id)
 
         if activeIds[col] == id {
             activeIds[col] = sessions(forColumn: col).first?.id
         }
 
-        // Clean up pairings
         unpairAll(sessionId: id)
     }
 
@@ -148,7 +157,6 @@ class SessionManager: ObservableObject {
         "#e06c75", "#98c379", "#61afef", "#c678dd",
         "#e5c07b", "#56b6c2", "#be5046", "#d19a66"
     ]
-    private var nextColorIndex = 0
 
     @discardableResult
     func createPairing(between ids: Set<UUID>, color: String? = nil) -> PairingGroup {
@@ -160,11 +168,20 @@ class SessionManager: ObservableObject {
                 }
             }
         }
-        let c = color ?? pairingColors[nextColorIndex % pairingColors.count]
-        nextColorIndex += 1
+        // Pick a color not used by any existing group
+        let c = color ?? nextUnusedColor()
         let group = PairingGroup(id: UUID(), color: c, memberIds: ids)
         pairingGroups.append(group)
         return group
+    }
+
+    private func nextUnusedColor() -> String {
+        let usedColors = Set(pairingGroups.map(\.color))
+        for color in pairingColors where !usedColors.contains(color) {
+            return color
+        }
+        // All colors used — cycle with a suffix to differentiate
+        return pairingColors[pairingGroups.count % pairingColors.count]
     }
 
     func removePairing(_ groupId: UUID) {
@@ -263,7 +280,12 @@ class SessionManager: ObservableObject {
             },
             columnCount: columnCount
         )
-        try? saved.save()
+        do {
+            try saved.save()
+        } catch {
+            // Log but don't crash on session save failure at quit time
+            NSLog("CLIDE: Failed to save session: \(error.localizedDescription)")
+        }
     }
 
     func restoreSession() {

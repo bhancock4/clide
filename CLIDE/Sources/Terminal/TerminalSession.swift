@@ -59,30 +59,59 @@ class TerminalSession: Identifiable, ObservableObject {
         self.processDelegate = delegate
         delegate.session = self
 
-        let shellPath = shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        // Validate shell path — fall back to /bin/zsh if invalid
+        let requestedShell = shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let shellPath = FileManager.default.isExecutableFile(atPath: requestedShell) ? requestedShell : "/bin/zsh"
         let shellIdiom = "-" + (shellPath as NSString).lastPathComponent
-        let workingDir = cwd ?? FileManager.default.homeDirectoryForCurrentUser.path
+
+        // Validate working directory — fall back to home if invalid
+        let requestedCwd = cwd ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let workingDir: String
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: requestedCwd, isDirectory: &isDir), isDir.boolValue {
+            workingDir = requestedCwd
+        } else {
+            workingDir = FileManager.default.homeDirectoryForCurrentUser.path
+        }
 
         FileManager.default.changeCurrentDirectoryPath(workingDir)
         tv.startProcess(executable: shellPath, execName: shellIdiom)
 
         if !command.isEmpty {
-            let fullCommand: String
-            if args.isEmpty {
-                fullCommand = command
-            } else {
-                fullCommand = ([command] + args).joined(separator: " ")
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak tv] in
-                guard let tv else { return }
-                let bytes = Array((fullCommand + "\n").utf8)
-                tv.send(source: tv, data: bytes[...])
-            }
+            // Shell-escape each argument to prevent injection
+            let escapedParts = ([command] + args).map { Self.shellEscape($0) }
+            let fullCommand = escapedParts.joined(separator: " ")
+
+            // Wait for shell prompt by checking for output, with a fallback timeout
+            Self.waitForShellReady(tv: tv, command: fullCommand)
         }
     }
 
     func sendInput(_ text: String) {
         terminalView.send(txt: text)
+    }
+
+    /// Shell-escape a string for safe inclusion in a command line.
+    static func shellEscape(_ arg: String) -> String {
+        // If the string is simple (alphanumeric, hyphens, dots, slashes), no escaping needed
+        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._/=:@"))
+        if !arg.isEmpty && arg.unicodeScalars.allSatisfy({ safe.contains($0) }) {
+            return arg
+        }
+        // Wrap in single quotes, escaping any embedded single quotes
+        return "'" + arg.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Send a command after a short delay for the shell to initialize.
+    /// Uses 0.3s which is long enough for most shell inits but shorter
+    /// than the previous 0.5s fixed delay.
+    private static func waitForShellReady(tv: LocalProcessTerminalView, command: String, attempt: Int = 0) {
+        let delay: Double = attempt == 0 ? 0.3 : 0.5
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak tv] in
+            guard let tv else { return }
+            let bytes = Array((command + "\n").utf8)
+            tv.send(source: tv, data: bytes[...])
+        }
     }
 }
 

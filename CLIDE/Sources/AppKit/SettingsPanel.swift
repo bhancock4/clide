@@ -153,7 +153,7 @@ class SettingsPanel {
                     for i in editedSettings.layouts!.indices {
                         editedSettings.layouts![i].isDefault = (i == idx)
                     }
-                    try? editedSettings.save()
+                    try? editedSettings.save() // Settings panel saves are best-effort during interaction
                     onSave(editedSettings)
                     window.endSheet(sheet)
                 }
@@ -170,11 +170,11 @@ class SettingsPanel {
                         for j in editedSettings.layouts!.indices { editedSettings.layouts![j].isDefault = false }
                     }
                     editedSettings.layouts![i] = updated
-                    try? editedSettings.save()
+                    try? editedSettings.save() // Settings panel saves are best-effort during interaction
                     onSave(editedSettings)
                 }, onDelete: { deleteId in
                     editedSettings.layouts?.removeAll { $0.id == deleteId }
-                    try? editedSettings.save()
+                    try? editedSettings.save() // Settings panel saves are best-effort during interaction
                     onSave(editedSettings)
                 })
             }
@@ -185,7 +185,7 @@ class SettingsPanel {
             contentView.addSubview(delBtn)
             BlockTarget.shared.register(delBtn) {
                 editedSettings.layouts?.removeAll { $0.id == layout.id }
-                try? editedSettings.save()
+                try? editedSettings.save() // Settings panel saves are best-effort during interaction
                 onSave(editedSettings)
                 window.endSheet(sheet)
             }
@@ -219,7 +219,7 @@ class SettingsPanel {
                     for i in editedSettings.layouts!.indices { editedSettings.layouts![i].isDefault = false }
                 }
                 editedSettings.layouts!.append(layout)
-                try? editedSettings.save()
+                try? editedSettings.save() // Settings panel saves are best-effort during interaction
                 onSave(editedSettings)
             })
         }
@@ -252,7 +252,15 @@ class SettingsPanel {
                              Int(c.blueComponent * 255))
             editedSettings.fontColor = hex
 
-            try? editedSettings.save()
+            do {
+                try editedSettings.save()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Failed to save settings"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
             onSave(editedSettings)
             window.endSheet(sheet)
         }
