@@ -2,11 +2,13 @@ import AppKit
 
 /// A settings sheet presented as a window-modal sheet.
 class SettingsPanel {
-    static func show(in window: NSWindow, settings: inout AppSettings, onSave: @escaping (AppSettings) -> Void) {
+    static func show(in window: NSWindow, settings: inout AppSettings, onSave: @escaping (AppSettings) -> Void, onSaveCurrentLayout: (() -> Void)? = nil) {
         var editedSettings = settings
+        let layoutCount = settings.layouts?.count ?? 0
+        let panelHeight = 460 + CGFloat(layoutCount) * 22
 
         let sheet = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 360),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: panelHeight),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -17,7 +19,7 @@ class SettingsPanel {
         contentView.wantsLayer = true
         sheet.contentView = contentView
 
-        var y: CGFloat = 320
+        var y: CGFloat = panelHeight - 40
         let leftMargin: CGFloat = 20
         let fieldWidth: CGFloat = 420
 
@@ -122,6 +124,106 @@ class SettingsPanel {
         shellField.frame = NSRect(x: leftMargin, y: y, width: fieldWidth, height: 24)
         contentView.addSubview(shellField)
         y -= 44
+
+        // Layouts section
+        let layoutLabel = NSTextField(labelWithString: "Layouts")
+        layoutLabel.font = Theme.fontSmall
+        layoutLabel.textColor = .secondaryLabelColor
+        layoutLabel.frame = NSRect(x: leftMargin, y: y, width: fieldWidth, height: 18)
+        contentView.addSubview(layoutLabel)
+        y -= 24
+
+        // List existing layouts
+        let layouts = editedSettings.layouts ?? []
+        for (idx, layout) in layouts.enumerated() {
+            let defaultMark = layout.isDefault ? " (default)" : ""
+            let nameLabel = NSTextField(labelWithString: "\(layout.name)\(defaultMark)")
+            nameLabel.font = Theme.fontSmall
+            nameLabel.textColor = layout.isDefault ? Theme.accentGold : Theme.textPrimary
+            nameLabel.frame = NSRect(x: leftMargin + 4, y: y, width: 200, height: 20)
+            contentView.addSubview(nameLabel)
+
+            if !layout.isDefault {
+                let defaultBtn = NSButton(title: "Set Default", target: nil, action: nil)
+                defaultBtn.font = Theme.fontTiny
+                defaultBtn.frame = NSRect(x: 220, y: y, width: 80, height: 20)
+                contentView.addSubview(defaultBtn)
+                BlockTarget.shared.register(defaultBtn) {
+                    if editedSettings.layouts == nil { return }
+                    for i in editedSettings.layouts!.indices {
+                        editedSettings.layouts![i].isDefault = (i == idx)
+                    }
+                    try? editedSettings.save()
+                    onSave(editedSettings)
+                    window.endSheet(sheet)
+                }
+            }
+
+            let editBtn = NSButton(title: "Edit", target: nil, action: nil)
+            editBtn.font = Theme.fontTiny
+            editBtn.frame = NSRect(x: 310, y: y, width: 45, height: 20)
+            contentView.addSubview(editBtn)
+            BlockTarget.shared.register(editBtn) {
+                LayoutEditorViewController.show(in: sheet, layout: layout, tools: editedSettings.tools, onSave: { updated in
+                    guard let i = editedSettings.layouts?.firstIndex(where: { $0.id == updated.id }) else { return }
+                    if updated.isDefault {
+                        for j in editedSettings.layouts!.indices { editedSettings.layouts![j].isDefault = false }
+                    }
+                    editedSettings.layouts![i] = updated
+                    try? editedSettings.save()
+                    onSave(editedSettings)
+                }, onDelete: { deleteId in
+                    editedSettings.layouts?.removeAll { $0.id == deleteId }
+                    try? editedSettings.save()
+                    onSave(editedSettings)
+                })
+            }
+
+            let delBtn = NSButton(title: "✕", target: nil, action: nil)
+            delBtn.font = Theme.fontTiny
+            delBtn.frame = NSRect(x: 365, y: y, width: 24, height: 20)
+            contentView.addSubview(delBtn)
+            BlockTarget.shared.register(delBtn) {
+                editedSettings.layouts?.removeAll { $0.id == layout.id }
+                try? editedSettings.save()
+                onSave(editedSettings)
+                window.endSheet(sheet)
+            }
+
+            y -= 22
+        }
+
+        // Save current layout button
+        if let saveCurrent = onSaveCurrentLayout {
+            let saveCurrentBtn = NSButton(title: "Save Current Layout...", target: nil, action: nil)
+            saveCurrentBtn.font = Theme.fontSmall
+            saveCurrentBtn.frame = NSRect(x: leftMargin, y: y, width: 160, height: 22)
+            contentView.addSubview(saveCurrentBtn)
+            BlockTarget.shared.register(saveCurrentBtn) {
+                window.endSheet(sheet)
+                saveCurrent()
+            }
+            y -= 24
+        }
+
+        // New layout button
+        let newLayoutBtn = NSButton(title: "+ New Layout...", target: nil, action: nil)
+        newLayoutBtn.font = Theme.fontSmall
+        newLayoutBtn.frame = NSRect(x: leftMargin, y: y, width: 120, height: 22)
+        contentView.addSubview(newLayoutBtn)
+        BlockTarget.shared.register(newLayoutBtn) {
+            LayoutEditorViewController.show(in: sheet, layout: nil, tools: editedSettings.tools, onSave: { newLayout in
+                if editedSettings.layouts == nil { editedSettings.layouts = [] }
+                var layout = newLayout
+                if layout.isDefault {
+                    for i in editedSettings.layouts!.indices { editedSettings.layouts![i].isDefault = false }
+                }
+                editedSettings.layouts!.append(layout)
+                try? editedSettings.save()
+                onSave(editedSettings)
+            })
+        }
+        y -= 36
 
         // Buttons
         let cancelBtn = NSButton(title: "Cancel", target: nil, action: nil)

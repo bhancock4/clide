@@ -1,11 +1,12 @@
 import Foundation
 import SwiftUI
 
-/// Manages all terminal sessions across panels.
+/// Manages all terminal sessions across columns.
 class SessionManager: ObservableObject {
     @Published var sessions: [TerminalSession] = []
-    @Published var activeMainId: UUID?
-    @Published var activeSecondaryId: UUID?
+    @Published var activeIds: [Int: UUID] = [:]   // column index → active session
+    @Published var columnCount: Int = 1
+    @Published var pairingGroups: [PairingGroup] = []
 
     var settings: AppSettings
 
@@ -20,101 +21,231 @@ class SessionManager: ObservableObject {
         label: String,
         command: String = "",
         args: [String] = [],
-        panel: TerminalSession.Panel = .main,
+        column: Int = 0,
         cwd: String? = nil
     ) -> TerminalSession {
         let session = TerminalSession(
             label: label,
             command: command,
             args: args,
-            panel: panel,
+            column: column,
             cwd: cwd ?? settings.defaultCwd,
             shell: settings.defaultShell,
             fontSize: settings.fontSize,
             fontColor: settings.fontColor
         )
-
         sessions.append(session)
-
-        switch panel {
-        case .main:
-            activeMainId = session.id
-        case .secondary:
-            activeSecondaryId = session.id
-        }
-
+        activeIds[column] = session.id
         return session
     }
 
     func closeSession(_ id: UUID) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        let col = session.column
         sessions.removeAll { $0.id == id }
 
-        if activeMainId == id {
-            activeMainId = mainSessions.first?.id
+        if activeIds[col] == id {
+            activeIds[col] = sessions(forColumn: col).first?.id
         }
-        if activeSecondaryId == id {
-            activeSecondaryId = secondarySessions.first?.id
-        }
+
+        // Clean up pairings
+        unpairAll(sessionId: id)
     }
 
     // MARK: - Active Session
 
-    func setActive(_ id: UUID, panel: TerminalSession.Panel) {
-        switch panel {
-        case .main:
-            activeMainId = id
-        case .secondary:
-            activeSecondaryId = id
-        }
+    func setActive(_ id: UUID, column: Int) {
+        activeIds[column] = id
     }
 
-    func activeSession(for panel: TerminalSession.Panel) -> TerminalSession? {
-        let id = panel == .main ? activeMainId : activeSecondaryId
-        guard let id else { return nil }
+    func activeSession(forColumn col: Int) -> TerminalSession? {
+        guard let id = activeIds[col] else { return nil }
         return sessions.first { $0.id == id }
     }
 
-    // MARK: - Panel Queries
+    // MARK: - Column Queries
 
-    var mainSessions: [TerminalSession] {
-        sessions.filter { $0.panel == .main }
-    }
-
-    var secondarySessions: [TerminalSession] {
-        sessions.filter { $0.panel == .secondary }
+    func sessions(forColumn col: Int) -> [TerminalSession] {
+        sessions.filter { $0.column == col }
     }
 
     var hasAnySessions: Bool {
         !sessions.isEmpty
     }
 
+    // MARK: - Column Management
+
+    @discardableResult
+    func addColumn() -> Int {
+        let col = columnCount
+        columnCount += 1
+        return col
+    }
+
+    func removeColumn(_ col: Int) {
+        // Remove sessions in this column
+        sessions.removeAll { $0.column == col }
+        activeIds.removeValue(forKey: col)
+
+        // Shift higher columns down
+        for session in sessions where session.column > col {
+            session.column -= 1
+        }
+        var newIds: [Int: UUID] = [:]
+        for (key, val) in activeIds {
+            if key < col { newIds[key] = val }
+            else if key > col { newIds[key - 1] = val }
+        }
+        activeIds = newIds
+        columnCount = max(1, columnCount - 1)
+    }
+
     // MARK: - Tab Navigation
 
-    func cycleTab(panel: TerminalSession.Panel, forward: Bool) {
-        let panelSessions = panel == .main ? mainSessions : secondarySessions
-        guard panelSessions.count > 1 else { return }
+    func cycleTab(column: Int, forward: Bool) {
+        let colSessions = sessions(forColumn: column)
+        guard colSessions.count > 1 else { return }
 
-        let activeId = panel == .main ? activeMainId : activeSecondaryId
-        let currentIndex = panelSessions.firstIndex { $0.id == activeId } ?? 0
+        let currentIndex = colSessions.firstIndex { $0.id == activeIds[column] } ?? 0
         let nextIndex: Int
         if forward {
-            nextIndex = (currentIndex + 1) % panelSessions.count
+            nextIndex = (currentIndex + 1) % colSessions.count
         } else {
-            nextIndex = (currentIndex - 1 + panelSessions.count) % panelSessions.count
+            nextIndex = (currentIndex - 1 + colSessions.count) % colSessions.count
         }
-        setActive(panelSessions[nextIndex].id, panel: panel)
+        setActive(colSessions[nextIndex].id, column: column)
     }
 
-    func selectTab(index: Int, panel: TerminalSession.Panel) {
-        let panelSessions = panel == .main ? mainSessions : secondarySessions
-        guard index < panelSessions.count else { return }
-        setActive(panelSessions[index].id, panel: panel)
+    func selectTab(index: Int, column: Int) {
+        let colSessions = sessions(forColumn: column)
+        guard index < colSessions.count else { return }
+        setActive(colSessions[index].id, column: column)
     }
 
-    func moveToPanel(_ id: UUID, newPanel: TerminalSession.Panel) {
+    /// Global monotonically increasing counter — numbers are never reused.
+    private var nextNumber: Int = 0
+
+    func nextLabel(baseName: String) -> String {
+        nextNumber += 1
+        return "\(baseName) \(nextNumber)"
+    }
+
+    func moveToColumn(_ id: UUID, newColumn: Int) {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
-        session.panel = newPanel
-        setActive(id, panel: newPanel)
+        session.column = newColumn
+        setActive(id, column: newColumn)
+    }
+
+    // MARK: - Pairing
+
+    struct PairingGroup: Identifiable, Codable {
+        var id: UUID
+        var color: String
+        var memberIds: Set<UUID>
+    }
+
+    private let pairingColors = [
+        "#e06c75", "#98c379", "#61afef", "#c678dd",
+        "#e5c07b", "#56b6c2", "#be5046", "#d19a66"
+    ]
+    private var nextColorIndex = 0
+
+    @discardableResult
+    func createPairing(between ids: Set<UUID>, color: String? = nil) -> PairingGroup {
+        // Check if these two sessions are already paired together
+        if ids.count == 2 {
+            for group in pairingGroups {
+                if ids.isSubset(of: group.memberIds) {
+                    return group  // already paired
+                }
+            }
+        }
+        let c = color ?? pairingColors[nextColorIndex % pairingColors.count]
+        nextColorIndex += 1
+        let group = PairingGroup(id: UUID(), color: c, memberIds: ids)
+        pairingGroups.append(group)
+        return group
+    }
+
+    func removePairing(_ groupId: UUID) {
+        pairingGroups.removeAll { $0.id == groupId }
+    }
+
+    func unpairAll(sessionId: UUID) {
+        for i in pairingGroups.indices.reversed() {
+            pairingGroups[i].memberIds.remove(sessionId)
+            if pairingGroups[i].memberIds.count < 2 {
+                pairingGroups.remove(at: i)
+            }
+        }
+    }
+
+    func pairings(for sessionId: UUID) -> [PairingGroup] {
+        pairingGroups.filter { $0.memberIds.contains(sessionId) }
+    }
+
+    func pairedSessions(for sessionId: UUID) -> [TerminalSession] {
+        let pairedIds = pairings(for: sessionId).flatMap(\.memberIds)
+        let uniqueIds = Set(pairedIds).subtracting([sessionId])
+        return sessions.filter { uniqueIds.contains($0.id) }
+    }
+
+    // MARK: - Layout Capture/Apply
+
+    func captureLayout(name: String, windowFrame: NSRect? = nil) -> TerminalLayout {
+        var layoutColumns: [LayoutColumn] = []
+        for col in 0..<columnCount {
+            let colSessions = sessions(forColumn: col)
+            let terminals = colSessions.map {
+                LayoutTerminal(label: $0.label, command: $0.command, args: $0.args)
+            }
+            layoutColumns.append(LayoutColumn(terminals: terminals))
+        }
+        let layoutPairings = pairingGroups.map { group in
+            LayoutPairing(id: group.id, color: group.color, members: group.memberIds.compactMap { sid in
+                guard let s = sessions.first(where: { $0.id == sid }) else { return nil }
+                let row = sessions(forColumn: s.column).firstIndex(where: { $0.id == sid }) ?? 0
+                return LayoutPosition(column: s.column, row: row)
+            })
+        }
+        let frame: LayoutRect?
+        if let f = windowFrame {
+            frame = LayoutRect(x: f.origin.x, y: f.origin.y, width: f.size.width, height: f.size.height)
+        } else {
+            frame = nil
+        }
+        return TerminalLayout(name: name, columns: layoutColumns, pairings: layoutPairings, windowFrame: frame)
+    }
+
+    func applyLayout(_ layout: TerminalLayout, cwd: String) {
+        for (colIdx, col) in layout.columns.enumerated() {
+            while columnCount <= colIdx { _ = addColumn() }
+            for terminal in col.terminals {
+                // Use the tool name if a command is set, otherwise generate a unique name
+                let baseName = terminal.command.isEmpty ? "Terminal" : terminal.label
+                let label = nextLabel(baseName: baseName)
+                createSession(
+                    label: label,
+                    command: terminal.command,
+                    args: terminal.args,
+                    column: colIdx,
+                    cwd: cwd
+                )
+            }
+        }
+        // Restore pairings by position
+        for pairing in layout.pairings {
+            var group = PairingGroup(id: UUID(), color: pairing.color, memberIds: [])
+            for pos in pairing.members {
+                let colSessions = sessions(forColumn: pos.column)
+                if pos.row < colSessions.count {
+                    group.memberIds.insert(colSessions[pos.row].id)
+                }
+            }
+            if group.memberIds.count >= 2 {
+                pairingGroups.append(group)
+            }
+        }
     }
 
     // MARK: - Session Persistence
@@ -126,25 +257,24 @@ class SessionManager: ObservableObject {
                     label: session.label,
                     command: session.command,
                     args: session.args,
-                    panel: session.panel.rawValue,
+                    column: session.column,
                     cwd: nil
                 )
             },
-            sidebarVisible: false,
-            splitVisible: !secondarySessions.isEmpty
+            columnCount: columnCount
         )
         try? saved.save()
     }
 
     func restoreSession() {
         let saved = SavedSession.load()
+        columnCount = max(1, saved.columnCount)
         for terminal in saved.terminals {
-            let panel: TerminalSession.Panel = terminal.panel == "secondary" ? .secondary : .main
             createSession(
                 label: terminal.label,
                 command: terminal.command,
                 args: terminal.args,
-                panel: panel,
+                column: terminal.column,
                 cwd: terminal.cwd
             )
         }

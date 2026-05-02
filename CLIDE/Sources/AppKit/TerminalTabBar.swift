@@ -1,148 +1,234 @@
 import AppKit
 
-protocol TerminalTabBarDelegate: AnyObject {
-    func tabBarDidSelectTab(_ id: UUID)
-    func tabBarDidCloseTab(_ id: UUID)
-    func tabBarDidDoubleClickTab(_ id: UUID)
-    func tabBarDidRequestNewTab()
+// MARK: - Terminal Cell Delegate
+
+protocol TerminalCellDelegate: AnyObject {
+    func cellDidSelect(_ id: UUID)
+    func cellDidClose(_ id: UUID)
+    func cellDidDoubleClick(_ id: UUID)
+    func cellDidRequestPairing(source: UUID, target: UUID)
+    func cellDidRightClick(_ id: UUID, event: NSEvent, view: NSView)
 }
 
-/// Horizontal tab bar showing terminal sessions with colored dots and close buttons.
-class TerminalTabBar: NSView {
-    weak var delegate: TerminalTabBarDelegate?
+// MARK: - Pasteboard type for drag & drop pairing
 
-    private let stackView = NSStackView()
+extension NSPasteboard.PasteboardType {
+    static let clideSessionId = NSPasteboard.PasteboardType("com.clide.session-id")
+}
 
-    struct TabInfo {
-        let id: UUID
-        let label: String
-        let color: NSColor
-        let isActive: Bool
-        let index: Int
+// MARK: - Terminal Cell Header
+
+/// Thin header bar for a stacked terminal cell — shows colored dot, label, close button, and pairing stripes.
+class TerminalCellHeader: NSView, NSDraggingSource {
+    let sessionId: UUID
+    weak var delegate: TerminalCellDelegate?
+    private let labelField = NSTextField(labelWithString: "")
+    private let dot = NSView()
+    private let stripesStack = NSStackView()
+    private var mouseDownLocation: NSPoint?
+    private var isDragging = false
+
+    var isActive: Bool = false {
+        didSet { updateAppearance() }
     }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        setup()
+    init(sessionId: UUID, label: String, color: NSColor, delegate: TerminalCellDelegate?) {
+        self.sessionId = sessionId
+        self.delegate = delegate
+        super.init(frame: .zero)
+        setup(label: label, color: color)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil {
+            registerForDraggedTypes([.clideSessionId])
+        }
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private func setup() {
-        wantsLayer = true
-
-        stackView.orientation = .horizontal
-        stackView.spacing = 1
-        stackView.alignment = .centerY
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stackView)
-
-        NSLayoutConstraint.activate([
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            stackView.topAnchor.constraint(equalTo: topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            // Don't pin trailing — let it be as wide as its content
-        ])
+    func updateLabel(_ text: String) {
+        labelField.stringValue = text
     }
 
-    func update(tabs: [TabInfo]) {
-        stackView.arrangedSubviews.forEach { $0.removeFromSuperview() }
+    func updateColor(_ color: NSColor) {
+        dot.layer?.backgroundColor = color.cgColor
+    }
 
-        for tab in tabs {
-            let tabView = makeTab(tab)
-            stackView.addArrangedSubview(tabView)
+    func updatePairings(_ groups: [SessionManager.PairingGroup]) {
+        stripesStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        for group in groups {
+            let stripe = NSView()
+            stripe.wantsLayer = true
+            stripe.layer?.backgroundColor = (NSColor.fromHex(group.color) ?? .gray).cgColor
+            stripe.layer?.cornerRadius = 2
+            stripe.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                stripe.widthAnchor.constraint(equalToConstant: 20),
+                stripe.heightAnchor.constraint(equalToConstant: 4),
+            ])
+            stripesStack.addArrangedSubview(stripe)
         }
+        stripesStack.isHidden = groups.isEmpty
     }
 
-    private func makeTab(_ tab: TabInfo) -> NSView {
-        // Use a button-like clickable view
-        let btn = TabButton(tabId: tab.id, delegate: delegate)
-        btn.wantsLayer = true
-        btn.layer?.backgroundColor = tab.isActive
-            ? Theme.bgPrimary.cgColor
-            : Theme.bgTertiary.withAlphaComponent(0.3).cgColor
-        btn.layer?.cornerRadius = 4
+    private func setup(label: String, color: NSColor) {
+        wantsLayer = true
+        updateAppearance()
 
-        // Colored dot
-        let dot = NSView()
+        // Pairing stripes at very top
+        stripesStack.orientation = .horizontal
+        stripesStack.spacing = 3
+        stripesStack.translatesAutoresizingMaskIntoConstraints = false
+        stripesStack.isHidden = true
+        addSubview(stripesStack)
+
         dot.wantsLayer = true
-        dot.layer?.backgroundColor = tab.color.cgColor
+        dot.layer?.backgroundColor = color.cgColor
         dot.layer?.cornerRadius = 4
         dot.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(dot)
 
-        // Label
-        let label = NSTextField(labelWithString: tab.label)
-        label.font = Theme.fontSmall
-        label.textColor = tab.isActive ? Theme.textPrimary : Theme.textSecondary
-        label.lineBreakMode = .byTruncatingTail
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.translatesAutoresizingMaskIntoConstraints = false
+        labelField.stringValue = label
+        labelField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        labelField.textColor = Theme.textSecondary
+        labelField.lineBreakMode = .byTruncatingTail
+        labelField.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(labelField)
 
-        // Tab number
-        let numLabel = NSTextField(labelWithString: tab.index < 9 ? "\(tab.index + 1)" : "")
-        numLabel.font = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
-        numLabel.textColor = Theme.textMuted
-        numLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        // Close button
-        let closeBtn = NSButton(title: "✕", target: btn, action: #selector(TabButton.closeClicked))
-        closeBtn.font = NSFont.systemFont(ofSize: 9)
+        let closeBtn = NSButton(title: "", target: self, action: #selector(closeTapped))
+        closeBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
+        closeBtn.imagePosition = .imageOnly
+        closeBtn.symbolConfiguration = .init(pointSize: 8, weight: .medium)
         closeBtn.isBordered = false
-        closeBtn.contentTintColor = Theme.textSecondary
+        closeBtn.contentTintColor = Theme.textMuted
         closeBtn.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(closeBtn)
 
-        btn.addSubview(dot)
-        btn.addSubview(label)
-        btn.addSubview(numLabel)
-        btn.addSubview(closeBtn)
-
-        btn.translatesAutoresizingMaskIntoConstraints = false
+        translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            btn.heightAnchor.constraint(equalToConstant: 28),
+            heightAnchor.constraint(equalToConstant: 28),
 
-            dot.leadingAnchor.constraint(equalTo: btn.leadingAnchor, constant: 10),
-            dot.centerYAnchor.constraint(equalTo: btn.centerYAnchor),
+            stripesStack.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            stripesStack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            stripesStack.heightAnchor.constraint(equalToConstant: 4),
+
+            dot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            dot.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
             dot.widthAnchor.constraint(equalToConstant: 8),
             dot.heightAnchor.constraint(equalToConstant: 8),
 
-            label.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6),
-            label.centerYAnchor.constraint(equalTo: btn.centerYAnchor),
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: 120),
+            labelField.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6),
+            labelField.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
+            labelField.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -4),
 
-            numLabel.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 4),
-            numLabel.centerYAnchor.constraint(equalTo: btn.centerYAnchor),
-
-            closeBtn.leadingAnchor.constraint(equalTo: numLabel.trailingAnchor, constant: 4),
-            closeBtn.trailingAnchor.constraint(equalTo: btn.trailingAnchor, constant: -6),
-            closeBtn.centerYAnchor.constraint(equalTo: btn.centerYAnchor),
+            closeBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            closeBtn.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
+            closeBtn.widthAnchor.constraint(equalToConstant: 16),
+            closeBtn.heightAnchor.constraint(equalToConstant: 16),
         ])
-
-        return btn
-    }
-}
-
-/// A clickable tab view that handles single-click (select) and double-click (rename).
-class TabButton: NSView {
-    let tabId: UUID
-    weak var delegate: TerminalTabBarDelegate?
-
-    init(tabId: UUID, delegate: TerminalTabBarDelegate?) {
-        self.tabId = tabId
-        self.delegate = delegate
-        super.init(frame: .zero)
     }
 
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            delegate?.tabBarDidDoubleClickTab(tabId)
+    private func updateAppearance() {
+        if isActive {
+            layer?.backgroundColor = Theme.bgTertiary.cgColor
+            labelField.textColor = Theme.textPrimary
         } else {
-            delegate?.tabBarDidSelectTab(tabId)
+            layer?.backgroundColor = Theme.bgSecondary.cgColor
+            labelField.textColor = Theme.textSecondary
         }
     }
 
-    @objc func closeClicked() {
-        delegate?.tabBarDidCloseTab(tabId)
+    // MARK: - Mouse Events (with drag threshold)
+
+    override func mouseDown(with event: NSEvent) {
+        mouseDownLocation = event.locationInWindow
+        isDragging = false
+
+        if event.clickCount == 2 {
+            delegate?.cellDidDoubleClick(sessionId)
+            mouseDownLocation = nil
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        // Only select if we didn't start a drag
+        if !isDragging && mouseDownLocation != nil {
+            delegate?.cellDidSelect(sessionId)
+        }
+        mouseDownLocation = nil
+        isDragging = false
+    }
+
+    @objc func closeTapped() {
+        delegate?.cellDidClose(sessionId)
+    }
+
+    // MARK: - Right-Click Menu
+
+    override func rightMouseDown(with event: NSEvent) {
+        delegate?.cellDidRightClick(sessionId, event: event, view: self)
+    }
+
+    // MARK: - Drag Source (for pairing)
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let startLoc = mouseDownLocation else { return }
+        let currentLoc = event.locationInWindow
+        let dx = currentLoc.x - startLoc.x
+        let dy = currentLoc.y - startLoc.y
+        let distance = sqrt(dx * dx + dy * dy)
+        guard distance > 5 else { return }  // threshold before drag starts
+
+        isDragging = true
+        mouseDownLocation = nil  // prevent re-triggering
+
+        let pasteboardItem = NSPasteboardItem()
+        pasteboardItem.setString(sessionId.uuidString, forType: .clideSessionId)
+        let dragItem = NSDraggingItem(pasteboardWriter: pasteboardItem)
+        dragItem.setDraggingFrame(bounds, contents: snapshot())
+        beginDraggingSession(with: [dragItem], event: event, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        return .link
+    }
+
+    private func snapshot() -> NSImage {
+        let image = NSImage(size: bounds.size)
+        image.lockFocus()
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            layer?.render(in: ctx)
+        }
+        image.unlockFocus()
+        return image
+    }
+
+    // MARK: - Drop Target (for pairing)
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard let sourceId = sender.draggingPasteboard.string(forType: .clideSessionId),
+              UUID(uuidString: sourceId) != sessionId else {
+            return []
+        }
+        layer?.borderColor = Theme.accentGold.cgColor
+        layer?.borderWidth = 2
+        return .link
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        layer?.borderWidth = 0
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        layer?.borderWidth = 0
+        guard let sourceIdStr = sender.draggingPasteboard.string(forType: .clideSessionId),
+              let sourceId = UUID(uuidString: sourceIdStr),
+              sourceId != sessionId else {
+            return false
+        }
+        delegate?.cellDidRequestPairing(source: sourceId, target: sessionId)
+        return true
     }
 }

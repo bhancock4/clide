@@ -5,6 +5,7 @@ protocol WelcomeViewControllerDelegate: AnyObject {
     func welcomeDidSelectNewTerminal()
     func welcomeDidSelectRestoreSession()
     func welcomeDidSelectSettings()
+    func welcomeDidSelectLayout(_ layout: TerminalLayout)
 }
 
 class WelcomeViewController: NSViewController {
@@ -52,6 +53,12 @@ class WelcomeViewController: NSViewController {
         }
         if key == "T" { delegate?.welcomeDidSelectNewTerminal(); return }
         if key == "S" { delegate?.welcomeDidSelectSettings(); return }
+        if key == "L" {
+            if let layout = settings.defaultLayout {
+                delegate?.welcomeDidSelectLayout(layout)
+            }
+            return
+        }
         super.keyDown(with: event)
     }
 
@@ -106,8 +113,29 @@ class WelcomeViewController: NSViewController {
         buttonRow.addArrangedSubview(termBtn)
         stack.addArrangedSubview(buttonRow)
 
+        // Saved layouts
+        if let layouts = settings.layouts, !layouts.isEmpty {
+            let layoutTitle = makeLabel("LAYOUTS", font: Theme.fontSmall, color: Theme.textSecondary, align: .center)
+            stack.addArrangedSubview(layoutTitle)
+
+            let layoutRow = NSStackView()
+            layoutRow.orientation = .horizontal
+            layoutRow.spacing = 12
+            for layout in layouts {
+                let prefix = layout.isDefault ? "[L] " : ""
+                let btn = makeActionButton("\(prefix)\(layout.name)", highlight: layout.isDefault) { [weak self] in
+                    self?.delegate?.welcomeDidSelectLayout(layout)
+                }
+                layoutRow.addArrangedSubview(btn)
+            }
+            stack.addArrangedSubview(layoutRow)
+        }
+
         // Hints
-        let hints = makeLabel("[T] New Terminal  [S] Settings  [?] Help", font: Theme.fontSmall, color: Theme.textMuted, align: .center)
+        let hintsText = settings.layouts?.isEmpty == false
+            ? "[T] New Terminal  [L] Default Layout  [S] Settings"
+            : "[T] New Terminal  [S] Settings  [?] Help"
+        let hints = makeLabel(hintsText, font: Theme.fontSmall, color: Theme.textMuted, align: .center)
         stack.addArrangedSubview(hints)
     }
 

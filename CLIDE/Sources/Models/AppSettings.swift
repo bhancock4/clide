@@ -9,6 +9,11 @@ struct AppSettings: Codable {
     var defaultShell: String?
     var defaultCwd: String?
     var promptForDirectory: Bool?
+    var layouts: [TerminalLayout]?
+
+    var defaultLayout: TerminalLayout? {
+        layouts?.first(where: \.isDefault)
+    }
 
     static let `default` = AppSettings(
         tools: ToolConfig.defaults,
@@ -17,7 +22,9 @@ struct AppSettings: Codable {
         fontFamily: "Menlo",
         fontColor: nil,
         defaultShell: nil,
-        defaultCwd: nil
+        defaultCwd: nil,
+        promptForDirectory: nil,
+        layouts: nil
     )
 
     static var configURL: URL {

@@ -8,9 +8,7 @@ class TerminalProcessDelegate: NSObject, LocalProcessTerminalViewDelegate {
 
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
 
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-        // Could update tab label: session?.label = title
-    }
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
@@ -25,33 +23,29 @@ class TerminalProcessDelegate: NSObject, LocalProcessTerminalViewDelegate {
 class TerminalSession: Identifiable, ObservableObject {
     let id = UUID()
     @Published var label: String
+    /// True if the user manually renamed this tab (don't auto-renumber it).
+    var hasCustomLabel = false
     let command: String
     let args: [String]
-    @Published var panel: Panel
+    @Published var column: Int
     @Published var isAlive: Bool = true
 
     let terminalView: LocalProcessTerminalView
     private let processDelegate: TerminalProcessDelegate
 
-    enum Panel: String, Codable {
-        case main, secondary
-    }
-
-    init(label: String, command: String, args: [String], panel: Panel, cwd: String?, shell: String?, fontSize: Int, fontColor: String?) {
+    init(label: String, command: String, args: [String], column: Int, cwd: String?, shell: String?, fontSize: Int, fontColor: String?) {
         self.label = label
         self.command = command
         self.args = args
-        self.panel = panel
+        self.column = column
 
         let tv = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
         let delegate = TerminalProcessDelegate()
 
-        // Configure appearance
         let font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
         tv.font = font
         tv.configureNativeColors()
 
-        // Set terminal colors
         if let colorHex = fontColor, let nsColor = NSColor.fromHex(colorHex) {
             tv.nativeForegroundColor = nsColor
         } else {
@@ -63,13 +57,8 @@ class TerminalSession: Identifiable, ObservableObject {
 
         self.terminalView = tv
         self.processDelegate = delegate
-
-        // Wire delegate back-reference after self is initialized
         delegate.session = self
 
-        // Always start a login shell — tools are launched by sending the
-        // command after the shell is ready. This ensures the user's full
-        // PATH is available (homebrew, nvm, cargo, etc).
         let shellPath = shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let shellIdiom = "-" + (shellPath as NSString).lastPathComponent
         let workingDir = cwd ?? FileManager.default.homeDirectoryForCurrentUser.path
@@ -77,8 +66,6 @@ class TerminalSession: Identifiable, ObservableObject {
         FileManager.default.changeCurrentDirectoryPath(workingDir)
         tv.startProcess(executable: shellPath, execName: shellIdiom)
 
-        // If a tool was requested, send the command after a brief delay
-        // to let the shell finish initializing
         if !command.isEmpty {
             let fullCommand: String
             if args.isEmpty {
@@ -94,15 +81,8 @@ class TerminalSession: Identifiable, ObservableObject {
         }
     }
 
-    /// Send text to this terminal's PTY input.
     func sendInput(_ text: String) {
         terminalView.send(txt: text)
-    }
-
-    private static func buildEnvironment() -> [String] {
-        var env = ProcessInfo.processInfo.environment
-        env["TERM"] = "xterm-256color"
-        return env.map { "\($0.key)=\($0.value)" }
     }
 }
 
