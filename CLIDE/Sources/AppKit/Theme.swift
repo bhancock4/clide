@@ -11,6 +11,7 @@ enum Theme {
     static let textSecondary = NSColor(red: 0.545, green: 0.580, blue: 0.620, alpha: 1.0)
     static let textMuted = NSColor(red: 0.282, green: 0.310, blue: 0.345, alpha: 1.0)
     static let accentGold = NSColor(red: 0.788, green: 0.635, blue: 0.153, alpha: 1.0)
+    static let accentAmber = NSColor(red: 0.961, green: 0.620, blue: 0.043, alpha: 1.0)
     static let accentGreen = NSColor(red: 0.247, green: 0.725, blue: 0.314, alpha: 1.0)
     static let accentRed = NSColor(red: 0.973, green: 0.318, blue: 0.286, alpha: 1.0)
     static let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)

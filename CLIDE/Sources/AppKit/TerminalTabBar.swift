@@ -6,6 +6,7 @@ protocol TerminalCellDelegate: AnyObject {
     func cellDidSelect(_ id: UUID)
     func cellDidClose(_ id: UUID)
     func cellDidDoubleClick(_ id: UUID)
+    func cellDidToggleBroadcast(_ id: UUID)
     func cellDidRequestPairing(source: UUID, target: UUID)
     func cellDidRightClick(_ id: UUID, event: NSEvent, view: NSView)
 }
@@ -25,11 +26,16 @@ class TerminalCellHeader: NSView, NSDraggingSource {
     private let labelField = NSTextField(labelWithString: "")
     private let dot = NSView()
     private let stripesStack = NSStackView()
+    private let broadcastBtn = NSButton()
     private var mouseDownLocation: NSPoint?
     private var isDragging = false
 
     var isActive: Bool = false {
         didSet { updateAppearance() }
+    }
+
+    var isBroadcasting: Bool = false {
+        didSet { updateBroadcastAppearance() }
     }
 
     init(sessionId: UUID, label: String, color: NSColor, delegate: TerminalCellDelegate?) {
@@ -97,6 +103,18 @@ class TerminalCellHeader: NSView, NSDraggingSource {
         labelField.translatesAutoresizingMaskIntoConstraints = false
         addSubview(labelField)
 
+        // Broadcast toggle button — always visible, click to toggle
+        broadcastBtn.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right", accessibilityDescription: "Toggle Broadcast")
+        broadcastBtn.imagePosition = .imageOnly
+        broadcastBtn.symbolConfiguration = .init(pointSize: 9, weight: .medium)
+        broadcastBtn.isBordered = false
+        broadcastBtn.contentTintColor = Theme.textMuted
+        broadcastBtn.toolTip = "Toggle broadcast input"
+        broadcastBtn.target = self
+        broadcastBtn.action = #selector(broadcastTapped)
+        broadcastBtn.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(broadcastBtn)
+
         let closeBtn = NSButton(title: "", target: self, action: #selector(closeTapped))
         closeBtn.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
         closeBtn.imagePosition = .imageOnly
@@ -121,7 +139,12 @@ class TerminalCellHeader: NSView, NSDraggingSource {
 
             labelField.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6),
             labelField.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
-            labelField.trailingAnchor.constraint(lessThanOrEqualTo: closeBtn.leadingAnchor, constant: -4),
+            labelField.trailingAnchor.constraint(lessThanOrEqualTo: broadcastBtn.leadingAnchor, constant: -4),
+
+            broadcastBtn.trailingAnchor.constraint(equalTo: closeBtn.leadingAnchor, constant: -4),
+            broadcastBtn.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
+            broadcastBtn.widthAnchor.constraint(equalToConstant: 16),
+            broadcastBtn.heightAnchor.constraint(equalToConstant: 16),
 
             closeBtn.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             closeBtn.centerYAnchor.constraint(equalTo: centerYAnchor, constant: 2),
@@ -130,13 +153,32 @@ class TerminalCellHeader: NSView, NSDraggingSource {
         ])
     }
 
+    private let activeIndicator = NSView()
+
+    private func setupActiveIndicator() {
+        activeIndicator.wantsLayer = true
+        activeIndicator.layer?.backgroundColor = Theme.accentGold.cgColor
+        activeIndicator.translatesAutoresizingMaskIntoConstraints = false
+        activeIndicator.isHidden = true
+        addSubview(activeIndicator)
+        NSLayoutConstraint.activate([
+            activeIndicator.leadingAnchor.constraint(equalTo: leadingAnchor),
+            activeIndicator.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            activeIndicator.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            activeIndicator.widthAnchor.constraint(equalToConstant: 3),
+        ])
+    }
+
     private func updateAppearance() {
+        if activeIndicator.superview == nil { setupActiveIndicator() }
         if isActive {
             layer?.backgroundColor = Theme.bgTertiary.cgColor
             labelField.textColor = Theme.textPrimary
+            activeIndicator.isHidden = false
         } else {
             layer?.backgroundColor = Theme.bgSecondary.cgColor
             labelField.textColor = Theme.textSecondary
+            activeIndicator.isHidden = true
         }
     }
 
@@ -163,6 +205,14 @@ class TerminalCellHeader: NSView, NSDraggingSource {
 
     @objc func closeTapped() {
         delegate?.cellDidClose(sessionId)
+    }
+
+    @objc func broadcastTapped() {
+        delegate?.cellDidToggleBroadcast(sessionId)
+    }
+
+    private func updateBroadcastAppearance() {
+        broadcastBtn.contentTintColor = isBroadcasting ? Theme.accentAmber : Theme.textMuted
     }
 
     // MARK: - Right-Click Menu

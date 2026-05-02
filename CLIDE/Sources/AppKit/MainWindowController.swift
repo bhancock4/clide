@@ -26,6 +26,10 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     private var cellViews: [UUID: NSView] = [:]
     private var cellHeaders: [UUID: TerminalCellHeader] = [:]
 
+    // Broadcast typing — additional terminals that receive keystrokes
+    var broadcastTargets: Set<UUID> = []
+    private var keyMonitor: Any?
+
     private var selectionMonitor: Any?
     private var selectionBar: SelectionActionBar?
     private var sessionCwd: String?
@@ -52,6 +56,8 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         setupUI()
         showWelcome()
         startSelectionMonitoring()
+        startBroadcastMonitoring()
+        trackFocusChanges()
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -93,11 +99,17 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         let toolbar = buildColumnToolbar(column: index)
-        let panel = buildPanel(stack: stack, toolbar: toolbar)
+        let panel = buildPanel(stack: stack, toolbar: toolbar, showBranding: index == 0)
 
         horizontalSplit.addArrangedSubview(panel)
         let col = ColumnView(index: index, container: panel, stack: stack)
         columns.append(col)
+
+        // Give the new column 1/3 of the horizontal space
+        DispatchQueue.main.async { [weak self] in
+            self?.distributeColumnSpace()
+        }
+
         return col
     }
 
@@ -150,9 +162,46 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         columns.first(where: { $0.index == colIndex })?.stack
     }
 
+    /// Distribute columns so new ones get ~1/3 of the total width.
+    private func distributeColumnSpace() {
+        let count = horizontalSplit.arrangedSubviews.filter { !$0.isHidden }.count
+        guard count > 1 else { return }
+        let totalWidth = horizontalSplit.bounds.width
+        let dividerWidth = horizontalSplit.dividerThickness
+        let usable = totalWidth - CGFloat(count - 1) * dividerWidth
+
+        // New column gets 1/3 or equal share, whichever is smaller
+        let newShare = min(usable / 3, usable / CGFloat(count))
+        let existingShare = (usable - newShare) / CGFloat(count - 1)
+
+        var pos: CGFloat = 0
+        for i in 0..<(count - 1) {
+            pos += (i == count - 2) ? existingShare : existingShare
+            horizontalSplit.setPosition(pos + CGFloat(i) * dividerWidth, ofDividerAt: i)
+        }
+    }
+
+    /// Distribute terminals within a column so new ones get ~1/3 of the height.
+    private func distributeTerminalSpace(in stack: NSSplitView) {
+        let count = stack.arrangedSubviews.count
+        guard count > 1 else { return }
+        let totalHeight = stack.bounds.height
+        let dividerHeight = stack.dividerThickness
+        let usable = totalHeight - CGFloat(count - 1) * dividerHeight
+
+        let newShare = min(usable / 3, usable / CGFloat(count))
+        let existingShare = (usable - newShare) / CGFloat(count - 1)
+
+        var pos: CGFloat = 0
+        for i in 0..<(count - 1) {
+            pos += existingShare
+            stack.setPosition(pos + CGFloat(i) * dividerHeight, ofDividerAt: i)
+        }
+    }
+
     // MARK: - Panel Building
 
-    private func buildPanel(stack: NSSplitView, toolbar: NSStackView) -> NSView {
+    private func buildPanel(stack: NSSplitView, toolbar: NSStackView, showBranding: Bool = false) -> NSView {
         let panel = NSView()
         panel.wantsLayer = true
         panel.translatesAutoresizingMaskIntoConstraints = false
@@ -162,6 +211,19 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         header.layer?.backgroundColor = Theme.bgSecondary.cgColor
         header.translatesAutoresizingMaskIntoConstraints = false
         panel.addSubview(header)
+
+        // CLIDE branding in the upper-left
+        if showBranding {
+            let brandLabel = NSTextField(labelWithString: "CLIDE")
+            brandLabel.font = NSFont.monospacedSystemFont(ofSize: 24, weight: .bold)
+            brandLabel.textColor = Theme.accentGold.withAlphaComponent(0.6)
+            brandLabel.translatesAutoresizingMaskIntoConstraints = false
+            header.addSubview(brandLabel)
+            NSLayoutConstraint.activate([
+                brandLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 10),
+                brandLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            ])
+        }
 
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         header.addSubview(toolbar)
@@ -319,6 +381,11 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         cellViews[session.id] = cell
         cellHeaders[session.id] = header
 
+        // Give the new terminal 1/3 of the column height
+        DispatchQueue.main.async { [weak self] in
+            self?.distributeTerminalSpace(in: stack)
+        }
+
         updateFocusIndicators()
         window.makeFirstResponder(tv)
     }
@@ -329,10 +396,11 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         cellHeaders.removeValue(forKey: id)
     }
 
-    private func updateFocusIndicators() {
-        let activeSet = Set(manager.activeIds.values)
+    func updateFocusIndicators() {
+        let focusedId = focusedSession()?.id
         for (id, header) in cellHeaders {
-            header.isActive = activeSet.contains(id)
+            header.isActive = (id == focusedId)
+            header.isBroadcasting = broadcastTargets.contains(id)
         }
     }
 
@@ -689,8 +757,18 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
 
     func cellDidSelect(_ id: UUID) {
         guard let session = manager.sessions.first(where: { $0.id == id }) else { return }
+        // Clicking a header just focuses that terminal
         manager.setActive(id, column: session.column)
         window.makeFirstResponder(session.terminalView)
+        updateFocusIndicators()
+    }
+
+    func cellDidToggleBroadcast(_ id: UUID) {
+        if broadcastTargets.contains(id) {
+            broadcastTargets.remove(id)
+        } else {
+            broadcastTargets.insert(id)
+        }
         updateFocusIndicators()
     }
 
@@ -700,6 +778,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
 
         removeTerminalCell(id)
         manager.closeSession(id)
+        broadcastTargets.remove(id)
 
         // If column is now empty and it's not column 0, remove it
         if manager.sessions(forColumn: col).isEmpty && col > 0 {
@@ -769,8 +848,55 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         }
     }
 
+    // MARK: - Broadcast Typing
+
+    private func startBroadcastMonitoring() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            self?.broadcastKey(event)
+            return event  // always pass through to focused terminal
+        }
+    }
+
+    private func broadcastKey(_ event: NSEvent) {
+        guard !broadcastTargets.isEmpty else { return }
+        guard let focused = focusedSession() else { return }
+        guard window.firstResponder is LocalProcessTerminalView else { return }
+
+        // When the user types in a terminal that's part of the broadcast group,
+        // it becomes the sender — broadcast to all OTHER members
+        let allMembers = broadcastTargets.union([focused.id])
+
+        for targetId in allMembers {
+            guard targetId != focused.id,
+                  let target = manager.sessions.first(where: { $0.id == targetId }) else { continue }
+
+            if let chars = event.characters, !chars.isEmpty {
+                let bytes = Array(chars.utf8)
+                target.terminalView.send(source: target.terminalView, data: bytes[...])
+            }
+        }
+    }
+
+    /// Track when a terminal view gains focus by clicking in it directly.
+    /// The focused terminal joins the broadcast group if broadcast is active.
+    private func trackFocusChanges() {
+        // Observe first responder changes via a mouseDown monitor
+        NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            // Defer check so first responder has updated
+            DispatchQueue.main.async { self?.handleFocusChange() }
+            return event
+        }
+    }
+
+    private func handleFocusChange() {
+        updateFocusIndicators()
+    }
+
     deinit {
         if let monitor = selectionMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
@@ -836,6 +962,40 @@ class PairContextMenu: NSMenu, NSMenuDelegate {
             item.target = self
             item.tag = tag
             addItem(item)
+        }
+
+        // Broadcast section
+        addItem(.separator())
+        let inBroadcast = controller.broadcastTargets.contains(sessionId)
+        let bcTag = nextTag
+        nextTag += 1
+        actions[bcTag] = { [weak controller] in
+            guard let controller else { return }
+            if controller.broadcastTargets.contains(sessionId) {
+                controller.broadcastTargets.remove(sessionId)
+            } else {
+                controller.broadcastTargets.insert(sessionId)
+            }
+            controller.updateFocusIndicators()
+        }
+        let bcPrefix = inBroadcast ? "\u{2713} " : "    "
+        let bcItem = NSMenuItem(title: "\(bcPrefix)Broadcast Input", action: #selector(runAction(_:)), keyEquivalent: "")
+        bcItem.target = self
+        bcItem.tag = bcTag
+        addItem(bcItem)
+
+        if !controller.broadcastTargets.isEmpty {
+            let clearTag = nextTag
+            nextTag += 1
+            actions[clearTag] = { [weak controller] in
+                guard let controller else { return }
+                controller.broadcastTargets.removeAll()
+                controller.updateFocusIndicators()
+            }
+            let clearItem = NSMenuItem(title: "Clear Broadcast Group", action: #selector(runAction(_:)), keyEquivalent: "")
+            clearItem.target = self
+            clearItem.tag = clearTag
+            addItem(clearItem)
         }
     }
 
