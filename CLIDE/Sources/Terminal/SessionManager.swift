@@ -91,6 +91,24 @@ class SessionManager: ObservableObject {
         return col
     }
 
+    /// Insert a new column after the given index, shifting higher columns right.
+    @discardableResult
+    func insertColumn(after col: Int) -> Int {
+        let newCol = col + 1
+        // Shift sessions in columns >= newCol up by one
+        for session in sessions where session.column >= newCol {
+            session.column += 1
+        }
+        var newIds: [Int: UUID] = [:]
+        for (key, val) in activeIds {
+            if key < newCol { newIds[key] = val }
+            else { newIds[key + 1] = val }
+        }
+        activeIds = newIds
+        columnCount += 1
+        return newCol
+    }
+
     func removeColumn(_ col: Int) {
         // Remove sessions in this column
         sessions.removeAll { $0.column == col }

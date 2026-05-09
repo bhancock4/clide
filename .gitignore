@@ -5,6 +5,9 @@
 xcuserdata/
 DerivedData/
 
+# Distribution
+dist/
+
 # macOS
 .DS_Store
 *.swp

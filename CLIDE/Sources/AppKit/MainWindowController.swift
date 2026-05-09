@@ -105,8 +105,39 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         horizontalSplit.addArrangedSubview(panel)
         let col = ColumnView(index: index, container: panel, stack: stack)
         columns.append(col)
+        columns.sort { $0.index < $1.index }
 
         // Give the new column 1/3 of the horizontal space
+        DispatchQueue.main.async { [weak self] in
+            self?.distributeColumnSpace()
+        }
+
+        return col
+    }
+
+    /// Insert a column view at a specific position in the horizontal split.
+    @discardableResult
+    private func insertColumnView(at index: Int) -> ColumnView {
+        let stack = NSSplitView()
+        stack.isVertical = false
+        stack.dividerStyle = .thin
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        let toolbar = buildColumnToolbar(column: index)
+        let panel = buildPanel(stack: stack, toolbar: toolbar, showBranding: false)
+
+        // Find the split view position: insert after the column whose index is (index - 1)
+        if let insertAfter = columns.first(where: { $0.index == index - 1 }),
+           let splitIndex = horizontalSplit.arrangedSubviews.firstIndex(of: insertAfter.container) {
+            horizontalSplit.insertArrangedSubview(panel, at: splitIndex + 1)
+        } else {
+            horizontalSplit.addArrangedSubview(panel)
+        }
+
+        let col = ColumnView(index: index, container: panel, stack: stack)
+        columns.append(col)
+        columns.sort { $0.index < $1.index }
+
         DispatchQueue.main.async { [weak self] in
             self?.distributeColumnSpace()
         }
@@ -280,25 +311,42 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         return btn
     }
 
+    /// Resolve the current column index for a toolbar by finding which column owns it.
+    private func currentColumnIndex(for toolbarView: NSView) -> Int? {
+        // Walk up to find the panel (column container), then match it
+        var view: NSView? = toolbarView
+        while let v = view {
+            if let col = columns.first(where: { $0.container === v }) {
+                return col.index
+            }
+            view = v.superview
+        }
+        return nil
+    }
+
     private func buildColumnToolbar(column: Int) -> NSStackView {
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.spacing = 2
 
         // Every column gets: add column + new terminal
-        stack.addArrangedSubview(makeToolbarButton(symbol: "sidebar.right", tooltip: "Add Column") { [weak self] in
-            self?.addColumnToRight(of: column)
+        // Use currentColumnIndex to resolve the live index, not the captured one
+        stack.addArrangedSubview(makeToolbarButton(symbol: "sidebar.right", tooltip: "Add Column") { [weak self, weak stack] in
+            guard let self, let stack, let col = self.currentColumnIndex(for: stack) else { return }
+            self.addColumnToRight(of: col)
         })
-        stack.addArrangedSubview(makeToolbarButton(symbol: "plus", tooltip: "New Terminal") { [weak self] in
-            self?.createTerminal(inColumn: column)
+        stack.addArrangedSubview(makeToolbarButton(symbol: "plus", tooltip: "New Terminal") { [weak self, weak stack] in
+            guard let self, let stack, let col = self.currentColumnIndex(for: stack) else { return }
+            self.createTerminal(inColumn: col)
         })
 
         if column == 0 {
             stack.addArrangedSubview(makeToolbarButton(symbol: "gearshape", tooltip: "Settings (Cmd+,)") { [weak self] in self?.openSettings() })
             stack.addArrangedSubview(makeToolbarButton(symbol: "house", tooltip: "Home") { [weak self] in self?.goHome() })
         } else {
-            stack.addArrangedSubview(makeToolbarButton(symbol: "xmark", tooltip: "Close Column") { [weak self] in
-                self?.removeColumnView(at: column)
+            stack.addArrangedSubview(makeToolbarButton(symbol: "xmark", tooltip: "Close Column") { [weak self, weak stack] in
+                guard let self, let stack, let col = self.currentColumnIndex(for: stack) else { return }
+                self.removeColumnView(at: col)
             })
         }
 
@@ -448,8 +496,12 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     }
 
     private func addColumnToRight(of col: Int) {
-        let newCol = manager.addColumn()
-        addColumnView(at: newCol)
+        let newCol = manager.insertColumn(after: col)
+        // Re-index existing column views to reflect the shift
+        for i in columns.indices where columns[i].index >= newCol {
+            columns[i].index += 1
+        }
+        insertColumnView(at: newCol)
         createTerminal(inColumn: newCol)
     }
 
