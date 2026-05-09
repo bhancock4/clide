@@ -32,6 +32,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
     private var focusMonitor: Any?
 
     private var selectionMonitor: Any?
+    private var scrollMonitor: Any?
     private var selectionBar: SelectionActionBar?
     private var sessionCwd: String?
 
@@ -59,6 +60,7 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         startSelectionMonitoring()
         startBroadcastMonitoring()
         trackFocusChanges()
+        startScrollInterception()
 
         NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange),
                                                name: Theme.didChangeNotification, object: nil)
@@ -1003,10 +1005,38 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         updateFocusIndicators()
     }
 
+    // MARK: - Scroll Interception
+
+    /// Intercept scroll events to send arrow keys when terminal is in alternate screen (vim, less, etc.)
+    private func startScrollInterception() {
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
+            guard let self else { return event }
+            // Check if the scroll target is a terminal view in alternate screen mode
+            guard let tv = event.window?.contentView?.hitTest(event.locationInWindow) as? LocalProcessTerminalView,
+                  tv.terminal.isCurrentBufferAlternate else {
+                return event
+            }
+            // Ignore momentum scrolling — only respond to physical gesture
+            if event.momentumPhase != [] {
+                return nil
+            }
+            guard abs(event.deltaY) > 0.5 else { return nil }
+            let lines = max(1, Int(abs(event.deltaY)))
+            let up = tv.terminal.applicationCursor ? EscapeSequences.moveUpApp : EscapeSequences.moveUpNormal
+            let down = tv.terminal.applicationCursor ? EscapeSequences.moveDownApp : EscapeSequences.moveDownNormal
+            let seq = event.deltaY > 0 ? up : down
+            for _ in 0..<lines {
+                tv.send(seq)
+            }
+            return nil  // consume the event
+        }
+    }
+
     deinit {
         if let monitor = selectionMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = keyMonitor { NSEvent.removeMonitor(monitor) }
         if let monitor = focusMonitor { NSEvent.removeMonitor(monitor) }
+        if let monitor = scrollMonitor { NSEvent.removeMonitor(monitor) }
     }
 }
 

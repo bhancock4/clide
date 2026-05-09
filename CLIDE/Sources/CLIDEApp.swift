@@ -76,8 +76,12 @@ class CLIDEAppDelegate: NSObject, NSApplicationDelegate {
         fileMenuItem.submenu = fileMenu
         mainMenu.addItem(fileMenuItem)
 
-        // Edit menu — send-to actions
+        // Edit menu
         let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
         let sendItem = NSMenuItem(title: "Send Selection to Partner", action: #selector(sendToPartner), keyEquivalent: "\r")
         sendItem.keyEquivalentModifierMask = [.command]
         sendItem.target = self
