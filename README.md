@@ -259,7 +259,7 @@ CLIDE/
 - [x] Atomic file persistence
 - [x] 46-test suite
 - [x] .app bundle packaging and DMG distribution
-- [ ] Homebrew cask
+- [x] Homebrew cask
 - [ ] Integrated diff viewer
 - [ ] Cost/token tracking dashboard
 - [ ] Conversation bookmarks
