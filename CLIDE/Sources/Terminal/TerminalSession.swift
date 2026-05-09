@@ -46,12 +46,8 @@ class TerminalSession: Identifiable, ObservableObject {
         tv.font = font
         tv.configureNativeColors()
 
-        if let colorHex = fontColor, let nsColor = NSColor.fromHex(colorHex) {
-            tv.nativeForegroundColor = nsColor
-        } else {
-            tv.nativeForegroundColor = NSColor(red: 0.90, green: 0.93, blue: 0.95, alpha: 1.0)
-        }
-        tv.nativeBackgroundColor = NSColor(red: 0.051, green: 0.067, blue: 0.090, alpha: 1.0)
+        tv.nativeForegroundColor = Theme.terminalForeground
+        tv.nativeBackgroundColor = Theme.terminalBackground
 
         tv.processDelegate = delegate
 

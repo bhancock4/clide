@@ -123,7 +123,22 @@ class SettingsPanel {
         shellField.placeholderString = "/bin/zsh"
         shellField.frame = NSRect(x: leftMargin, y: y, width: fieldWidth, height: 24)
         contentView.addSubview(shellField)
-        y -= 44
+        y -= 36
+
+        // Theme
+        let themeLabel = NSTextField(labelWithString: "Theme")
+        themeLabel.font = Theme.fontSmall
+        themeLabel.textColor = .secondaryLabelColor
+        themeLabel.frame = NSRect(x: leftMargin, y: y, width: fieldWidth, height: 18)
+        contentView.addSubview(themeLabel)
+        y -= 28
+
+        let themePopup = NSPopUpButton(frame: NSRect(x: leftMargin, y: y, width: 160, height: 24))
+        themePopup.addItems(withTitles: ["Dark", "Light", "System"])
+        let themeIndex = ["dark": 0, "light": 1, "system": 2]
+        themePopup.selectItem(at: themeIndex[editedSettings.theme] ?? 0)
+        contentView.addSubview(themePopup)
+        y -= 36
 
         // Layouts section
         let layoutLabel = NSTextField(labelWithString: "Layouts")
@@ -244,6 +259,10 @@ class SettingsPanel {
             editedSettings.promptForDirectory = promptCheck.state == .on ? true : nil
             editedSettings.fontSize = Int(fsField.stringValue) ?? 14
             editedSettings.defaultShell = shellField.stringValue.isEmpty ? nil : shellField.stringValue
+
+            let themeValues = ["dark", "light", "system"]
+            editedSettings.theme = themeValues[themePopup.indexOfSelectedItem]
+            Theme.setMode(Theme.Mode(rawValue: editedSettings.theme) ?? .dark)
 
             let c = colorWell.color.usingColorSpace(.sRGB) ?? colorWell.color
             let hex = String(format: "#%02x%02x%02x",

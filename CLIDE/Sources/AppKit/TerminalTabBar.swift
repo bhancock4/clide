@@ -169,6 +169,11 @@ class TerminalCellHeader: NSView, NSDraggingSource {
         ])
     }
 
+    func applyTheme() {
+        updateAppearance()
+        updateBroadcastAppearance()
+    }
+
     private func updateAppearance() {
         if activeIndicator.superview == nil { setupActiveIndicator() }
         if isActive {

@@ -60,8 +60,55 @@ class MainWindowController: NSObject, WelcomeViewControllerDelegate, TerminalCel
         startBroadcastMonitoring()
         trackFocusChanges()
 
+        NotificationCenter.default.addObserver(self, selector: #selector(themeDidChange),
+                                               name: Theme.didChangeNotification, object: nil)
+
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc private func themeDidChange() {
+        applyThemeColors()
+    }
+
+    private func applyThemeColors() {
+        rootView.layer?.backgroundColor = Theme.bgPrimary.cgColor
+
+        // Update column headers and toolbar buttons
+        for col in columns {
+            // Panel header
+            if let header = col.container.subviews.first {
+                header.layer?.backgroundColor = Theme.bgSecondary.cgColor
+                // Update toolbar button tints
+                for subview in header.subviews {
+                    if let stack = subview as? NSStackView {
+                        for item in stack.arrangedSubviews {
+                            if let btn = item as? NSButton {
+                                btn.contentTintColor = Theme.textSecondary
+                            }
+                        }
+                    }
+                    if let label = subview as? NSTextField {
+                        label.textColor = Theme.accentGold.withAlphaComponent(0.6)
+                    }
+                }
+            }
+        }
+
+        // Update terminal backgrounds and foregrounds
+        for session in manager.sessions {
+            session.terminalView.nativeBackgroundColor = Theme.terminalBackground
+            session.terminalView.nativeForegroundColor = Theme.terminalForeground
+            session.terminalView.terminal?.updateFullScreen()
+            session.terminalView.needsDisplay = true
+        }
+
+        // Update cell headers (triggers updateAppearance which reads Theme colors)
+        for (_, header) in cellHeaders {
+            header.applyTheme()
+        }
+
+        rootView.needsDisplay = true
     }
 
     // MARK: - UI Setup

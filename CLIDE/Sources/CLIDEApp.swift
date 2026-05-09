@@ -18,6 +18,7 @@ class CLIDEAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppIcon.setAsAppIcon()
         let settings = AppSettings.load()
+        Theme.mode = Theme.Mode(rawValue: settings.theme) ?? .dark
         windowController = MainWindowController(settings: settings)
         setupMenus()
 
