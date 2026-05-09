@@ -258,7 +258,7 @@ CLIDE/
 - [x] Shell argument escaping and path validation
 - [x] Atomic file persistence
 - [x] 46-test suite
-- [ ] .app bundle packaging and DMG distribution
+- [x] .app bundle packaging and DMG distribution
 - [ ] Homebrew cask
 - [ ] Integrated diff viewer
 - [ ] Cost/token tracking dashboard
